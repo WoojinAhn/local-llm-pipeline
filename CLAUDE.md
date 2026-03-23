@@ -2,18 +2,27 @@
 
 ## Overview
 
-로컬 LLM 듀얼 모델 파이프라인. DeepSeek R1 70B (분석) + Qwen 3 32B (한국어 번역)을 조합하여 한자 혼입 없는 한국어 분석 결과물을 생성한다.
+로컬 LLM 삼단 파이프라인. Qwen3-14B (한영 번역) + DeepSeek R1 70B (영어 분석)을 동시 로딩하여 한자 혼입 없는 한국어 분석 결과물을 생성한다. 모델 스왑 없이 두 모델이 128GB 통합 메모리에 상시 적재.
 
 ## Architecture
 
+### mlx-pipeline.py (Primary — mlx-lm 직접 추론)
+
+- **DeepSeek R1 Distill Llama 70B 8-bit MLX** (~75GB): 영어 분석/추론 전용. S급 분석력.
+- **Qwen3-14B 4-bit MLX** (~7.7GB): 한영 양방향 번역 전용. 한자 혼입 0% (10건 테스트 검증).
+- 두 모델 동시 로딩 (~83GB). 128GB에서 여유 ~30GB.
+- 삼단 파이프라인: 한→영 번역 → 영어 분석 → 영→한 번역.
+
+### llm-pipeline.py (Legacy — LM Studio API)
+
 - **LM Studio** (`localhost:1234`): OpenAI 호환 API 서버, MLX 백엔드
-- **DeepSeek R1 Distill Llama 70B 8-bit MLX**: 영어 분석/추론 전용. 한국어 직접 출력 시 중국어/일본어 한자가 혼입되는 구조적 문제가 있어 영어로만 사용.
-- **Qwen 3 32B 4-bit MLX**: 한국어 번역 및 한국어 직접 대화용. 한자 혼입 없음.
-- LM Studio는 동시에 하나의 LLM만 메모리에 로딩 가능. 모델 전환 시 unload → load 필요 (~10초).
+- DeepSeek R1 70B + Qwen 3 32B 이단 파이프라인 (모델 스왑 필요)
+- LM Studio 앱 실행이 필요한 환경에서 사용
 
 ## Key Files
 
-- `llm-pipeline.py`: 메인 파이프라인 스크립트. 외부 의존성 없이 Python stdlib만 사용.
+- `mlx-pipeline.py`: 삼단 파이프라인. mlx-lm 직접 추론. `pip install mlx-lm` 필요.
+- `llm-pipeline.py`: 이단 파이프라인 (레거시). LM Studio API. Python stdlib만 사용.
 
 ## README Convention
 
@@ -23,21 +32,24 @@
 
 ## Development Guidelines
 
-- 외부 패키지 의존성 최소화 (pip install 없이 동작해야 함)
-- LM Studio API는 OpenAI 호환 (`/v1/chat/completions`)
-- 모델 식별자: `deepseek-r1-distill-llama-70b`, `qwen/qwen3-32b:2`
-- 시스템 프롬프트 수정 시 `DEEPSEEK_SYSTEM`, `QWEN_SYSTEM` 상수 편집
+- mlx-pipeline: `pip install mlx-lm` 필요 (venv 사용 권장)
+- llm-pipeline: 외부 패키지 없이 Python stdlib만 사용
+- 모델 경로: LM Studio 캐시(`~/.lmstudio/models/`) 우선, HuggingFace ID 폴백
+- DeepSeek chat template: system role 대신 user message에 지시사항 병합 (mlx-lm에서 system role이 한국어 입력을 무시하는 이슈 우회)
+- 시스템 프롬프트 수정: `DEEPSEEK_SYSTEM`, `TRANSLATE_KO_TO_EN`, `TRANSLATE_EN_TO_KO` 상수 편집
 
 ## Known Issues
 
-- Ollama는 M5 Max Metal 크래시로 사용 불가 (ollama#14432). LM Studio만 사용.
-- DeepSeek R1의 thinking 과정에서 중국어가 나오는 건 정상 (출력에만 안 섞이면 됨).
-- Qwen 번역 품질은 기능적 수준. 직역 투가 간혹 나타남 — QWEN_SYSTEM 프롬프트 개선으로 완화 가능.
+- Ollama는 M5 Max Metal 크래시로 사용 불가 (ollama#14432).
+- DeepSeek R1의 thinking 과정에서 중국어가 나오는 건 정상 (출력에서 `<think>` 블록을 필터링).
+- DeepSeek R1 mlx-lm: chat template의 system role이 한국어 입력과 충돌 → user message에 병합하여 해결.
+- Qwen 계열 한자 혼입 위험: Qwen3-14B 4-bit에서는 10건 테스트 결과 0건. 단, Qwen3.5-27B 4-bit에서는 중국어 성어 혼입 확인됨 — 모델 크기/양자화에 따라 달라질 수 있음.
 - LM Studio CLI(`lms`)는 PATH에 자동 등록 안 됨. 전체 경로: `/Applications/LM Studio.app/Contents/Resources/app/.webpack/lms`
 
 ## Improvement Ideas
 
-- 모델 동시 로딩이 가능한 환경(vLLM, mlx-lm 직접 사용 등)으로 전환 시 스왑 시간 제거 가능
-- 스트리밍 출력 지원
 - Qwen 번역 프롬프트 튜닝 (용어집 확장, few-shot 예시 추가)
 - 파이프라인 결과 파일 저장 옵션
+- Hunyuan-MT 7B (WMT25 번역 대회 1위) MLX 변환 후 번역 모델 교체 검토
+- 스트리밍 출력 개선 (번역 단계도 실시간 출력)
+- 웹 검색 통합 (urllib로 검색 → 결과를 컨텍스트 주입)
