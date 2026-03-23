@@ -100,8 +100,9 @@ python3 -m venv .venv && source .venv/bin/activate && pip install mlx-lm
 # 삼단 파이프라인 (한국어 입력 → 영어 분석 → 한국어 결과)
 python3 mlx-pipeline.py "인공지능이 노동 시장에 미치는 영향을 분석해줘"
 
-# 대화형 모드
+# 대화형 모드 (컨텍스트 유지 — 후속 질문 가능)
 python3 mlx-pipeline.py
+# 대화 중 /reset 으로 컨텍스트 초기화
 
 # DeepSeek만 (영어 입출력)
 python3 mlx-pipeline.py --deepseek-only "Analyze the impact of AI on labor markets"
@@ -223,8 +224,9 @@ python3 -m venv .venv && source .venv/bin/activate && pip install mlx-lm
 # Triple-stage pipeline (Korean → English analysis → Korean)
 python3 mlx-pipeline.py "Analyze the impact of AI on labor markets"
 
-# Interactive mode
+# Interactive mode (context preserved — follow-up questions work)
 python3 mlx-pipeline.py
+# Type /reset during conversation to clear context
 
 # DeepSeek only (English in/out)
 python3 mlx-pipeline.py --deepseek-only "question"
