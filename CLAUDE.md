@@ -12,6 +12,7 @@
 - **Qwen3-14B 4-bit MLX** (~7.7GB): 한영 양방향 번역 전용. 한자 혼입 0% (10건 테스트 검증).
 - 두 모델 동시 로딩 (~83GB). 128GB에서 여유 ~30GB.
 - 삼단 파이프라인: 한→영 번역 → 영어 분석 → 영→한 번역.
+- 대화 컨텍스트 유지: mlx-lm `prompt_cache`로 DeepSeek 대화 히스토리 누적 (KV 캐시 재사용, 이전 턴 재계산 없음). `/reset`으로 초기화.
 
 ### llm-pipeline.py (Legacy — LM Studio API)
 
@@ -44,6 +45,7 @@
 - DeepSeek R1의 thinking 과정에서 중국어가 나오는 건 정상 (출력에서 `<think>` 블록을 필터링).
 - DeepSeek R1 mlx-lm: chat template의 system role이 한국어 입력과 충돌 → user message에 병합하여 해결.
 - Qwen 계열 한자 혼입 위험: Qwen3-14B 4-bit에서는 10건 테스트 결과 0건. 단, Qwen3.5-27B 4-bit에서는 중국어 성어 혼입 확인됨 — 모델 크기/양자화에 따라 달라질 수 있음.
+- DeepSeek R1은 추론/분석 특화 모델. 사실 기반 지식 질의(인물, 사건, 여론 등)에서는 가정법으로 답변하는 한계 있음 — 웹 검색 통합(#7)으로 보완 예정.
 - LM Studio CLI(`lms`)는 PATH에 자동 등록 안 됨. 전체 경로: `/Applications/LM Studio.app/Contents/Resources/app/.webpack/lms`
 
 ## Improvement Ideas
@@ -52,4 +54,4 @@
 - 파이프라인 결과 파일 저장 옵션
 - Hunyuan-MT 7B (WMT25 번역 대회 1위) MLX 변환 후 번역 모델 교체 검토
 - 스트리밍 출력 개선 (번역 단계도 실시간 출력)
-- 웹 검색 통합 (urllib로 검색 → 결과를 컨텍스트 주입)
+- 웹 검색 통합 (urllib로 검색 → 결과를 컨텍스트 주입) — #7
