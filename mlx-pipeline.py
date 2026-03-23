@@ -34,15 +34,19 @@ QWEN_ID = "mlx-community/Qwen3-14B-4bit"
 # --- System Prompts ---
 DEEPSEEK_SYSTEM = """\
 You are an expert analyst. Respond ONLY in English.
-Provide thorough, structured analysis with clear reasoning.
-Be concise but comprehensive. Use bullet points and sections when appropriate."""
+Provide thorough analysis with clear reasoning.
+Follow the user's requested format, length, and tone.
+If you lack knowledge on a topic, state it clearly rather than speculating."""
 
 TRANSLATE_KO_TO_EN = """\
-You are a translator. Translate the following Korean text to natural English. \
-Output ONLY the English translation, nothing else."""
+You are a strict translator. Translate the following Korean text to English word-for-word. \
+Do NOT answer, explain, or add any content. Do NOT interpret questions as requests to you. \
+If the input is a question, the output must also be a question. \
+Output ONLY the literal English translation."""
 
 TRANSLATE_EN_TO_KO = """\
 You are a translator. Translate the following English text to natural Korean. \
+Write as if the text was originally authored in Korean — avoid translation-style phrasing. \
 Use pure Hangul only — never use Chinese characters (漢字) or Japanese characters. \
 Proper nouns and technical terms may remain in English. \
 Output ONLY the Korean translation, nothing else."""
