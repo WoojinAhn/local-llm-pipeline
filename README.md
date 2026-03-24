@@ -33,13 +33,15 @@ flowchart TD
     B --> C{SEARCH?}
     C -->|yes| D["Brave 한국어 + Tavily 영어<br/>병렬 검색"]
     C -->|no| E["DeepSeek R1 70B<br/>영어 분석"]
-    D --> E
+    D --> D2["Qwen3-14B<br/>한국어 결과 → 영어 번역"]
+    D2 --> E
     E --> F["Qwen3-14B<br/>영→한 번역"]
     F --> G["🇰🇷 한국어 결과물"]
 
     style A fill:#e8f5e9
     style G fill:#e8f5e9
     style D fill:#fff3e0
+    style D2 fill:#fff3e0
     style E fill:#e3f2fd
 ```
 
@@ -176,13 +178,15 @@ flowchart TD
     B --> C{SEARCH?}
     C -->|yes| D["Brave Korean + Tavily English<br/>Parallel Search"]
     C -->|no| E["DeepSeek R1 70B<br/>English Analysis"]
-    D --> E
+    D --> D2["Qwen3-14B<br/>Korean Results → English Translation"]
+    D2 --> E
     E --> F["Qwen3-14B<br/>EN→KR Translation"]
     F --> G["🇰🇷 Korean Output"]
 
     style A fill:#e8f5e9
     style G fill:#e8f5e9
     style D fill:#fff3e0
+    style D2 fill:#fff3e0
     style E fill:#e3f2fd
 ```
 
