@@ -205,9 +205,23 @@ def pipeline(query, force_search=None):
         print("  [2/4] Searching web...", flush=True)
         from web_search import search_both, format_search_context
         ko_results, en_results = search_both(query, english_query)
-        search_context = format_search_context(ko_results, en_results)
         hit_count = len(ko_results) + len(en_results)
-        print(f"  → {hit_count} results found\n", flush=True)
+        print(f"  → {hit_count} results found", flush=True)
+
+        # Translate Korean snippets to English for DeepSeek
+        if ko_results:
+            print("  → Translating Korean results to English...", flush=True)
+            ko_snippets = "\n".join(
+                f"{i}. [{r['title']}] {r['snippet']}" for i, r in enumerate(ko_results, 1)
+            )
+            translated_snippets = translate(ko_snippets, direction="ko2en")
+            for i, r in enumerate(ko_results):
+                r["snippet"] = ""  # clear original
+            # Replace ko_results with single translated block
+            ko_results = [{"title": "Korean sources (translated)", "url": "", "snippet": translated_snippets}]
+
+        search_context = format_search_context(ko_results, en_results)
+        print(flush=True)
     else:
         print("  [2/4] Search skipped\n", flush=True)
 
