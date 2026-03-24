@@ -268,8 +268,7 @@ def main():
 
     if query is None:
         print(f"\nMLX Triple-Stage Pipeline (mode: {mode})")
-        print("  quit/exit: 종료 | /reset: 컨텍스트 초기화")
-        print("  /search <질문>: 강제 검색 | /nosearch <질문>: 검색 건너뛰기\n")
+        print("  /help 로 사용법 확인\n")
 
     while True:
         if query is None:
@@ -282,6 +281,22 @@ def main():
                 break
             if user_input == "/reset":
                 reset_context()
+                continue
+            if user_input == "/help":
+                print("""
+  사용법:
+    <질문>                한국어 질문 → 영어 분석 → 한국어 결과 (검색 자동 판별)
+    /search <질문>        웹 검색 강제 실행
+    /nosearch <질문>      웹 검색 건너뛰기
+    /reset                대화 컨텍스트 초기화
+    /help                 이 도움말 표시
+    quit / exit           종료
+
+  CLI 모드:
+    --deepseek-only       DeepSeek 영어 분석만
+    --qwen-only           Qwen 한국어 대화만
+    --translate-only      번역만 (분석 없이)
+""")
                 continue
         else:
             user_input = query
