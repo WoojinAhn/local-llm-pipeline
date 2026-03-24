@@ -186,19 +186,45 @@ def reset_context():
     print("  [Context reset]\n", flush=True)
 
 
-def pipeline(query):
-    """Triple-stage: Korean → English → Analysis → Korean."""
-    # Stage 1: Translate Korean input to English
-    print("  [1/3] Translating to English...", flush=True)
+def pipeline(query, force_search=None):
+    """Triple-stage pipeline with optional web search.
+
+    force_search: True=always, False=never, None=auto (Qwen judges)
+    """
+    # Stage 1: Translate + judge search
+    print("  [1/4] Translating to English...", flush=True)
     english_query, needs_search = translate(query, direction="ko2en")
-    print(f"  → {english_query}\n", flush=True)
+    print(f"  → {english_query}", flush=True)
 
-    # Stage 2: DeepSeek analysis in English (with conversation context)
-    print("  [2/3] DeepSeek R1 analyzing...", flush=True)
-    english_analysis = analyze(english_query)
+    if force_search is not None:
+        needs_search = force_search
 
-    # Stage 3: Translate analysis to Korean
-    print("\n  [3/3] Translating to Korean...", flush=True)
+    # Stage 2: Web search (if needed)
+    search_context = ""
+    if needs_search:
+        print("  [2/4] Searching web...", flush=True)
+        from web_search import search_both, format_search_context
+        ko_results, en_results = search_both(query, english_query)
+        search_context = format_search_context(ko_results, en_results)
+        hit_count = len(ko_results) + len(en_results)
+        print(f"  → {hit_count} results found\n", flush=True)
+    else:
+        print("  [2/4] Search skipped\n", flush=True)
+
+    # Stage 3: DeepSeek analysis
+    print("  [3/4] DeepSeek R1 analyzing...", flush=True)
+    if search_context:
+        analysis_prompt = (
+            f"[Web Search Results]\n{search_context}\n\n"
+            f"Based on the above search results and your own knowledge, "
+            f"analyze the following:\n{english_query}"
+        )
+    else:
+        analysis_prompt = english_query
+    english_analysis = analyze(analysis_prompt)
+
+    # Stage 4: Translate to Korean
+    print(f"\n  [4/4] Translating to Korean...", flush=True)
     korean_result = translate(english_analysis, direction="en2ko", stream=True)
 
     return f"""
@@ -241,7 +267,9 @@ def main():
         load_models()
 
     if query is None:
-        print(f"\nMLX Triple-Stage Pipeline (mode: {mode}, quit: quit/exit, reset: /reset)\n")
+        print(f"\nMLX Triple-Stage Pipeline (mode: {mode})")
+        print("  quit/exit: 종료 | /reset: 컨텍스트 초기화")
+        print("  /search <질문>: 강제 검색 | /nosearch <질문>: 검색 건너뛰기\n")
 
     while True:
         if query is None:
@@ -257,6 +285,15 @@ def main():
                 continue
         else:
             user_input = query
+
+        # Search override commands
+        force_search = None
+        if user_input.startswith("/search "):
+            force_search = True
+            user_input = user_input[8:]
+        elif user_input.startswith("/nosearch "):
+            force_search = False
+            user_input = user_input[10:]
 
         if mode == "deepseek":
             analyze(user_input)
@@ -277,7 +314,7 @@ def main():
             search_tag = "SEARCH:yes" if needs_search else "SEARCH:no"
             print(f"\n{result}\n{search_tag}\n")
         else:
-            result = pipeline(user_input)
+            result = pipeline(user_input, force_search=force_search)
             print(result)
             print()
 
