@@ -216,8 +216,11 @@ def pipeline(query, force_search=None):
     if search_context:
         analysis_prompt = (
             f"[Web Search Results]\n{search_context}\n\n"
-            f"Based on the above search results and your own knowledge, "
-            f"analyze the following:\n{english_query}"
+            f"IMPORTANT: You MUST cite specific facts, names, dates, and details "
+            f"from the search results above. Do NOT speculate or use hypothetical "
+            f"language (avoid 'may', 'likely', 'could be', 'it is plausible'). "
+            f"If the search results contain the answer, state it as fact.\n\n"
+            f"Question: {english_query}"
         )
     else:
         analysis_prompt = english_query
