@@ -49,7 +49,7 @@ flowchart TD
 
 **1. Ollama vs LM Studio vs mlx-lm**
 
-처음에 Ollama를 설치했으나, M5 Max에서 Metal 백엔드 크래시 발생 ([ollama#14432](https://github.com/ollama/ollama/issues/14432)). LM Studio의 MLX 백엔드로 전환하여 동작을 확인한 후, mlx-lm을 직접 사용하는 방식으로 최종 전환. LM Studio는 동시에 하나의 모델만 로딩하는 제약이 있었으나, mlx-lm 직접 사용 시 복수 모델 동시 로딩 가능.
+처음에 Ollama를 설치했으나, M5 Max에서 Metal 백엔드 크래시 발생 ([ollama#14432](https://github.com/ollama/ollama/issues/14432)). LM Studio의 MLX 백엔드로 전환하여 동작을 확인한 후, mlx-lm을 직접 사용하는 방식으로 최종 전환. LM Studio는 동시에 하나의 모델만 로딩하는 제약이 있었으나, mlx-lm 직접 사용 시 복수 모델 동시 로딩 가능. (참고: Ollama Metal 크래시는 `brew install ollama`(소스 컴파일)에서만 발생하며, `brew install --cask ollama`(프리빌트 바이너리)로 설치하면 정상 동작 확인됨.)
 
 **2. 모델 선택 — 분석 용도**
 
@@ -136,7 +136,7 @@ python3 mlx-pipeline.py --translate-only "번역할 문장"
 - DeepSeek R1은 "thinking" 시간이 있어 복잡한 질문일수록 응답 지연
 - Qwen 번역은 기능적 수준 (전문 번역가 수준은 아님, 하지만 의미 전달 충분)
 - 최초 실행 시 모델 다운로드 필요 (~83GB)
-- Ollama는 M5 Max Metal 크래시 이슈로 사용 불가 ([ollama#14432](https://github.com/ollama/ollama/issues/14432))
+- ~~Ollama는 M5 Max Metal 크래시 이슈로 사용 불가~~ → `brew install --cask ollama`로 설치 시 정상 동작 확인 ([ollama#14432](https://github.com/ollama/ollama/issues/14432))
 
 ### LM Studio 버전 (레거시)
 
@@ -194,7 +194,7 @@ flowchart TD
 
 **1. Ollama vs LM Studio vs mlx-lm**
 
-Initially installed Ollama, but it crashes on M5 Max due to a Metal backend issue ([ollama#14432](https://github.com/ollama/ollama/issues/14432)). Switched to LM Studio's MLX backend, then to direct mlx-lm usage for simultaneous multi-model loading (LM Studio limited to one model at a time).
+Initially installed Ollama, but it crashes on M5 Max due to a Metal backend issue ([ollama#14432](https://github.com/ollama/ollama/issues/14432)). Switched to LM Studio's MLX backend, then to direct mlx-lm usage for simultaneous multi-model loading (LM Studio limited to one model at a time). (Note: The Ollama Metal crash only occurs with `brew install ollama` (source build). Installing via `brew install --cask ollama` (pre-built binary) works correctly.)
 
 **2. Model Selection — Analysis**
 
@@ -277,7 +277,7 @@ python3 mlx-pipeline.py --translate-only "text to translate"
 - DeepSeek R1 has "thinking" latency — longer for complex queries
 - Qwen translation is functional, not professional-grade (but sufficient for comprehension)
 - First run downloads ~83GB of model weights
-- Ollama unusable on M5 Max due to Metal crash ([ollama#14432](https://github.com/ollama/ollama/issues/14432))
+- ~~Ollama unusable on M5 Max due to Metal crash~~ → works with `brew install --cask ollama` (pre-built binary) ([ollama#14432](https://github.com/ollama/ollama/issues/14432))
 
 ### LM Studio Version (Legacy)
 
