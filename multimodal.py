@@ -73,8 +73,20 @@ def judge_and_search(model, processor, config, query):
     return format_search_context(ko_results, en_results)
 
 
+_conversation_history = []
+
+
+def reset_context():
+    """Reset conversation history."""
+    global _conversation_history
+    _conversation_history = []
+    print("  [Context reset]\n")
+
+
 def run_query(model, processor, config, prompt, image=None,
               max_tokens=2048, search_enabled=True):
+    global _conversation_history
+
     images = [image] if image else None
     num_images = 1 if image else 0
 
@@ -83,15 +95,18 @@ def run_query(model, processor, config, prompt, image=None,
     if search_enabled and not image:
         search_context = judge_and_search(model, processor, config, prompt)
 
-    # Build final prompt with system context
+    # Build user message with date + search context
     date_prefix = f"[{current_date_context()}]\n\n"
     if search_context:
-        full_prompt = date_prefix + build_search_context_prompt(search_context, prompt)
+        user_msg = date_prefix + build_search_context_prompt(search_context, prompt)
     else:
-        full_prompt = date_prefix + prompt
+        user_msg = date_prefix + prompt
+
+    # Build multi-turn conversation
+    _conversation_history.append({"role": "user", "content": user_msg})
 
     formatted = apply_chat_template(
-        processor, config, full_prompt, num_images=num_images,
+        processor, config, _conversation_history, num_images=num_images,
     )
 
     print("\n--- Response ---")
@@ -125,6 +140,9 @@ def run_query(model, processor, config, prompt, image=None,
     tps = token_count / elapsed if elapsed > 0 else 0
     print(f"\n--- {token_count} tokens in {elapsed:.1f}s ({tps:.1f} tok/s) ---\n")
 
+    # Append assistant response to history
+    _conversation_history.append({"role": "assistant", "content": full_text})
+
 
 def interactive_mode(model, processor, config, search_enabled=True):
     search_status = "on" if search_enabled else "off"
@@ -132,6 +150,7 @@ def interactive_mode(model, processor, config, search_enabled=True):
     print("  /image <path>  — set image for next query")
     print("  /clear         — clear current image")
     print("  /search        — toggle web search on/off")
+    print("  /reset         — reset conversation context")
     print("  /quit          — exit")
     print()
 
@@ -160,6 +179,9 @@ def interactive_mode(model, processor, config, search_enabled=True):
         elif prompt == "/search":
             search_enabled = not search_enabled
             print(f"Search: {'on' if search_enabled else 'off'}")
+            continue
+        elif prompt == "/reset":
+            reset_context()
             continue
 
         run_query(model, processor, config, prompt,
