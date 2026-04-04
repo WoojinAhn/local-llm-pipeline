@@ -157,6 +157,7 @@ python3 multimodal.py --no-search "이 주장을 분석해줘"
 - `/image <경로>` — 이미지 설정
 - `/clear` — 이미지 해제
 - `/search` — 웹 검색 on/off 토글
+- `/reset` — 대화 컨텍스트 초기화
 - `/quit` — 종료
 
 ### 제한 사항
@@ -326,6 +327,7 @@ Interactive commands:
 - `/image <path>` — set image for next query
 - `/clear` — clear current image
 - `/search` — toggle web search on/off
+- `/reset` — reset conversation context
 - `/quit` — exit
 
 ### Limitations
