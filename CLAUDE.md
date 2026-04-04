@@ -2,7 +2,10 @@
 
 ## Overview
 
-로컬 LLM 삼단 파이프라인. Qwen3-14B (한영 번역) + DeepSeek R1 70B (영어 분석)을 동시 로딩하여 한자 혼입 없는 한국어 분석 결과물을 생성한다. 모델 스왑 없이 두 모델이 128GB 통합 메모리에 상시 적재.
+로컬 LLM 파이프라인. 128GB 통합 메모리에서 모델 스왑 없이 동작하는 두 가지 파이프라인 제공:
+
+1. **mlx-pipeline** (삼단): Qwen3-14B (번역) + DeepSeek R1 70B (분석). 한자 혼입 없는 한국어 분석 결과물 생성.
+2. **multimodal** (단일 모델): Gemma 4 31B. 텍스트+이미지 멀티모달 분석. 한국어 네이티브 지원으로 번역 불필요.
 
 ## Architecture
 
@@ -15,6 +18,14 @@
 - 선택적 웹 검색: Qwen3-14B가 번역 시 검색 필요 여부 판별 (SEARCH:yes/no). 검색 필요 시 Brave Search (한국어) + Tavily (영어) 병렬 실행. 한국어 검색 결과는 Qwen으로 영어 번역 후 DeepSeek 컨텍스트에 주입 (DeepSeek이 한국어 컨텍스트를 무시하는 이슈 우회).
 - 대화 컨텍스트 유지: mlx-lm `prompt_cache`로 DeepSeek 대화 히스토리 누적 (KV 캐시 재사용, 이전 턴 재계산 없음). `/reset`으로 초기화.
 
+### multimodal.py (Gemma 4 — mlx-vlm 직접 추론)
+
+- **Gemma 4 31B 4-bit MLX** (~17GB): 텍스트+이미지 멀티모달. 한국어 네이티브, 번역 파이프라인 불필요.
+- 단일 모델 로딩 (~17GB). 128GB에서 여유 ~110GB.
+- 선택적 웹 검색: Gemma 4가 검색 필요 여부 판별 + 검색 쿼리 리라이팅 (날짜 해석, 키워드 최적화) 한 번의 추론으로 처리. Brave (한국어) + Tavily (영어) 병렬 검색.
+- 날짜 인식: 시스템 프롬프트에 현재 날짜/요일 자동 주입.
+- thinking 필터링: Gemma 4 `<|channel>thought` 블록 자동 제거.
+
 ### llm-pipeline.py (Legacy — LM Studio API)
 
 - **LM Studio** (`localhost:1234`): OpenAI 호환 API 서버, MLX 백엔드
@@ -24,6 +35,8 @@
 ## Key Files
 
 - `mlx-pipeline.py`: 삼단 파이프라인. mlx-lm 직접 추론. `pip install mlx-lm` 필요.
+- `multimodal.py`: Gemma 4 멀티모달 파이프라인. mlx-vlm 직접 추론. `pip install mlx-vlm` 필요.
+- `prompts.py`: 공유 프롬프트 모듈. 날짜 주입, 검색 판별/쿼리 생성, 인용 강제, thinking 필터 등.
 - `web_search.py`: 웹 검색 모듈. `brave_search()`, `tavily_search()`, `search_both()`, `format_search_context()` 제공.
 - `llm-pipeline.py`: 이단 파이프라인 (레거시). LM Studio API. Python stdlib만 사용.
 
@@ -36,10 +49,11 @@
 ## Development Guidelines
 
 - mlx-pipeline: `pip install mlx-lm` 필요 (venv 사용 권장)
+- multimodal: `pip install mlx-vlm` 필요 (venv 사용 권장). Gemma 4 모델은 HuggingFace에서 다운로드 (HF 토큰 권장).
 - llm-pipeline: 외부 패키지 없이 Python stdlib만 사용
-- 모델 경로: LM Studio 캐시(`~/.lmstudio/models/`) 우선, HuggingFace ID 폴백
+- 모델 경로: LM Studio 캐시(`~/.lmstudio/models/`) 우선, HuggingFace 캐시(`~/.cache/huggingface/hub/`), HuggingFace ID 폴백
 - DeepSeek chat template: system role 대신 user message에 지시사항 병합 (mlx-lm에서 system role이 한국어 입력을 무시하는 이슈 우회)
-- 시스템 프롬프트 수정: `DEEPSEEK_SYSTEM`, `TRANSLATE_KO_TO_EN`, `TRANSLATE_EN_TO_KO` 상수 편집
+- 시스템 프롬프트 수정: `prompts.py` 내 상수/함수 편집 (양쪽 파이프라인 공유)
 - 웹 검색 API 키: `BRAVE_API_KEY`, `TAVILY_API_KEY` 환경변수 (선택 — 미설정 시 검색 단계를 graceful skip)
 
 ## Known Issues
@@ -51,6 +65,8 @@
 - DeepSeek R1은 추론/분석 특화 모델. 사실 기반 지식 질의에서는 웹 검색 없이 가정법으로 답변하는 한계 있음 → 웹 검색 통합으로 해결.
 - DeepSeek R1은 한국어 컨텍스트를 제대로 읽지 못함. 검색 결과가 한국어일 경우 반드시 영어로 번역 후 주입해야 함.
 - LM Studio CLI(`lms`)는 PATH에 자동 등록 안 됨. 전체 경로: `/Applications/LM Studio.app/Contents/Resources/app/.webpack/lms`
+- mlx-lm은 gemma4 아키텍처를 아직 미지원 (0.31.1 기준). Gemma 4 실행에는 mlx-vlm 필요.
+- Gemma 4 모델 다운로드 시 HuggingFace 토큰 없으면 rate limit 발생. `HF_TOKEN` 환경변수 설정 권장.
 
 ## Improvement Ideas
 

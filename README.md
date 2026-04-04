@@ -6,11 +6,14 @@
 
 ## 한국어
 
-MacBook Pro M5 Max (128GB)에서 로컬 LLM 삼단 파이프라인.
+MacBook Pro M5 Max (128GB)에서 로컬 LLM 파이프라인.
 
-Qwen3-14B가 한국어를 영어로 번역 → DeepSeek R1 70B가 영어로 분석 → Qwen3-14B가 다시 한국어로 번역. 두 모델을 동시에 메모리에 올려 **모델 스왑 없이** 중국어/일본어 한자 혼입 없는 순수 한글 결과물을 생성.
+**두 가지 파이프라인 제공:**
 
-**웹 검색 통합**: Qwen3-14B가 번역 시 검색 필요 여부를 자동 판별. 검색이 필요하면 Brave Search (한국어) + Tavily (영어)를 병렬 실행하여 최신 정보를 DeepSeek 분석에 주입.
+1. **mlx-pipeline** (삼단): Qwen3-14B (번역) + DeepSeek R1 70B (분석). 모델 스왑 없이 동시 로딩. 한자 혼입 없는 순수 한글 결과물 생성.
+2. **multimodal** (단일 모델): Gemma 4 31B. 텍스트+이미지 멀티모달 분석. 한국어 네이티브 지원으로 번역 불필요. 검색 쿼리 자동 리라이팅 + 날짜 인식.
+
+**웹 검색 통합**: 두 파이프라인 모두 Brave Search (한국어) + Tavily (영어) 병렬 검색 지원. 검색 필요 여부 자동 판별.
 
 ### 장비 스펙
 
@@ -131,6 +134,31 @@ python3 mlx-pipeline.py --qwen-only "오늘 할 일 정리해줘"
 python3 mlx-pipeline.py --translate-only "번역할 문장"
 ```
 
+### 멀티모달 파이프라인 (Gemma 4)
+
+```bash
+# 설정 (최초 1회)
+pip install mlx-vlm
+
+# 멀티모달 인터랙티브 모드 (텍스트+이미지, 웹 검색 포함)
+python3 multimodal.py
+
+# 이미지 분석
+python3 multimodal.py "이 이미지를 설명해줘" --image photo.jpg
+
+# 텍스트만
+python3 multimodal.py --text-only "양자 컴퓨팅 설명해줘"
+
+# 검색 없이
+python3 multimodal.py --no-search "이 주장을 분석해줘"
+```
+
+인터랙티브 모드 명령어:
+- `/image <경로>` — 이미지 설정
+- `/clear` — 이미지 해제
+- `/search` — 웹 검색 on/off 토글
+- `/quit` — 종료
+
 ### 제한 사항
 
 - DeepSeek R1은 "thinking" 시간이 있어 복잡한 질문일수록 응답 지연
@@ -151,11 +179,14 @@ python3 llm-pipeline.py "질문"
 
 ## English
 
-Triple-stage local LLM pipeline on MacBook Pro M5 Max (128GB).
+Local LLM pipelines on MacBook Pro M5 Max (128GB).
 
-Qwen3-14B translates Korean to English → DeepSeek R1 70B analyzes in English → Qwen3-14B translates back to Korean. Both models stay loaded simultaneously — **zero model swap** — producing pure Hangul output without Chinese/Japanese character contamination.
+**Two pipelines available:**
 
-**Web search integration**: Qwen3-14B automatically judges whether a web search is needed during translation. When needed, Brave Search (Korean) + Tavily (English) run in parallel, injecting up-to-date information into DeepSeek's analysis.
+1. **mlx-pipeline** (triple-stage): Qwen3-14B (translation) + DeepSeek R1 70B (analysis). Both models loaded simultaneously — zero model swap. Pure Hangul output without Chinese/Japanese character contamination.
+2. **multimodal** (single model): Gemma 4 31B. Text+image multimodal analysis. Native Korean support — no translation pipeline needed. Automatic search query rewriting + date awareness.
+
+**Web search integration**: Both pipelines support Brave Search (Korean) + Tavily (English) parallel search with automatic need detection.
 
 ### Hardware
 
@@ -271,6 +302,31 @@ python3 mlx-pipeline.py --qwen-only "질문"
 # Translation only (no analysis)
 python3 mlx-pipeline.py --translate-only "text to translate"
 ```
+
+### Multimodal Pipeline (Gemma 4)
+
+```bash
+# Setup (once)
+pip install mlx-vlm
+
+# Multimodal interactive mode (text+image, web search included)
+python3 multimodal.py
+
+# Image analysis
+python3 multimodal.py "Describe this image" --image photo.jpg
+
+# Text only
+python3 multimodal.py --text-only "Explain quantum computing"
+
+# Without search
+python3 multimodal.py --no-search "Analyze this argument"
+```
+
+Interactive commands:
+- `/image <path>` — set image for next query
+- `/clear` — clear current image
+- `/search` — toggle web search on/off
+- `/quit` — exit
 
 ### Limitations
 
