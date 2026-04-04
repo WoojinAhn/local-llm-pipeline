@@ -15,13 +15,19 @@ Usage:
 """
 
 import os
-import re
 import sys
 import time
 
 import mlx.core as mx
 from mlx_lm import load, stream_generate
 from mlx_lm.models.cache import make_prompt_cache
+
+from prompts import (
+    DEEPSEEK_SYSTEM,
+    TRANSLATE_KO_TO_EN,
+    TRANSLATE_EN_TO_KO,
+    filter_thinking_deepseek,
+)
 
 # --- Model paths (LM Studio cache first, HuggingFace fallback) ---
 _LMSTUDIO = os.path.expanduser("~/.lmstudio/models")
@@ -31,32 +37,7 @@ DEEPSEEK_ID = _DEEPSEEK_LOCAL if os.path.isdir(_DEEPSEEK_LOCAL) else "mlx-commun
 
 QWEN_ID = "mlx-community/Qwen3-14B-4bit"
 
-# --- System Prompts ---
-DEEPSEEK_SYSTEM = """\
-You are an expert analyst. Respond ONLY in English.
-Provide thorough analysis with clear reasoning.
-Follow the user's requested format, length, and tone.
-If you lack knowledge on a topic, state it clearly rather than speculating."""
-
-TRANSLATE_KO_TO_EN = """\
-You are a strict translator. Translate the following Korean text to English word-for-word. \
-Do NOT answer, explain, or add any content. Do NOT interpret questions as requests to you. \
-If the input is a question, the output must also be a question. \
-
-After the translation, on a new line, write SEARCH:yes if the question requires \
-up-to-date factual knowledge (people, events, current affairs, statistics, recent news). \
-Write SEARCH:no if it is a pure analysis, opinion, or reasoning task. \
-
-Output format:
-<English translation>
-SEARCH:yes or SEARCH:no"""
-
-TRANSLATE_EN_TO_KO = """\
-You are a translator. Translate the following English text to natural Korean. \
-Write as if the text was originally authored in Korean — avoid translation-style phrasing. \
-Use pure Hangul only — never use Chinese characters (漢字) or Japanese characters. \
-Proper nouns and technical terms may remain in English. \
-Output ONLY the Korean translation, nothing else."""
+# System prompts imported from prompts.py
 
 # --- Models (loaded once at startup) ---
 _deepseek_model = None
@@ -87,9 +68,7 @@ def load_models():
 
 def _filter_thinking(raw):
     """Remove <think>...</think> blocks from generated text."""
-    raw = re.sub(r"<think>.*?</think>\s*", "", raw, flags=re.DOTALL)
-    raw = re.sub(r"^.*?</think>\s*", "", raw, flags=re.DOTALL)
-    return raw.strip()
+    return filter_thinking_deepseek(raw)
 
 
 def _stream_and_collect(model, tokenizer, prompt, max_tokens=2000,

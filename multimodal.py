@@ -3,7 +3,7 @@
 Standalone multimodal script using mlx-vlm + Gemma 4.
 
 Accepts text + image input, outputs analysis.
-Optional web search (Brave + Tavily) for factual queries.
+Optional web search (Brave + Tavily) with query rewriting.
 Gemma 4 31B 4-bit (~17GB) runs comfortably on 128GB unified memory.
 
 Usage:
@@ -24,17 +24,18 @@ from mlx_vlm import load, generate, stream_generate
 from mlx_vlm.prompt_utils import apply_chat_template
 from mlx_vlm.utils import load_config
 
+from prompts import (
+    build_search_context_prompt,
+    current_date_context,
+    filter_thinking_gemma,
+    gemma_system,
+    parse_search_judge,
+    search_judge_prompt,
+)
 from web_search import search_both, format_search_context
 
 _LOCAL_MODEL = os.path.expanduser("~/.cache/huggingface/hub/mlx-community--gemma-4-31b-it-4bit")
 MODEL_ID = _LOCAL_MODEL if os.path.isdir(_LOCAL_MODEL) else "mlx-community/gemma-4-31b-it-4bit"
-
-SEARCH_JUDGE_PROMPT = """\
-Does the following user query require up-to-date factual knowledge \
-(recent events, current statistics, specific people/organizations, news, prices, dates) \
-to answer accurately? Reply with ONLY "SEARCH:yes" or "SEARCH:no".
-
-Query: {query}"""
 
 
 def load_model():
@@ -45,22 +46,30 @@ def load_model():
     return model, processor
 
 
-def needs_search(model, processor, config, query):
-    """Ask Gemma 4 whether this query needs web search."""
-    prompt = SEARCH_JUDGE_PROMPT.format(query=query)
+def judge_and_search(model, processor, config, query):
+    """Judge search need and generate optimized queries in one call."""
+    prompt = search_judge_prompt(query)
     formatted = apply_chat_template(processor, config, prompt, num_images=0)
-    result = generate(model, processor, formatted, max_tokens=20, temperature=0.0, verbose=False)
-    return "yes" in result.text.lower()
+    result = generate(model, processor, formatted, max_tokens=100, temperature=0.0, verbose=False)
 
+    raw = filter_thinking_gemma(result.text)
+    needs_search, ko_query, en_query = parse_search_judge(raw)
 
-def do_search(query):
-    """Run Brave (Korean) + Tavily (English) search in parallel."""
-    print("  Searching...", end="", flush=True)
+    if not needs_search:
+        return ""
+
+    # Fallback to original query if parsing failed
+    ko_query = ko_query or query
+    en_query = en_query or query
+
+    print(f"  Searching (KO: {ko_query})")
+    print(f"           (EN: {en_query})")
     t0 = time.time()
-    ko_results, en_results = search_both(query, query)
+    ko_results, en_results = search_both(ko_query, en_query)
     elapsed = time.time() - t0
     total = len(ko_results) + len(en_results)
-    print(f" {total} results ({elapsed:.1f}s)")
+    print(f"  → {total} results ({elapsed:.1f}s)")
+
     return format_search_context(ko_results, en_results)
 
 
@@ -72,19 +81,14 @@ def run_query(model, processor, config, prompt, image=None,
     # Search step (text-only, no image queries)
     search_context = ""
     if search_enabled and not image:
-        if needs_search(model, processor, config, prompt):
-            search_context = do_search(prompt)
+        search_context = judge_and_search(model, processor, config, prompt)
 
-    # Build final prompt with search context
+    # Build final prompt with system context
+    date_prefix = f"[{current_date_context()}]\n\n"
     if search_context:
-        full_prompt = (
-            f"Use the following search results to answer accurately. "
-            f"Cite sources when possible.\n\n"
-            f"--- Search Results ---\n{search_context}\n"
-            f"--- End Search Results ---\n\n{prompt}"
-        )
+        full_prompt = date_prefix + build_search_context_prompt(search_context, prompt)
     else:
-        full_prompt = prompt
+        full_prompt = date_prefix + prompt
 
     formatted = apply_chat_template(
         processor, config, full_prompt, num_images=num_images,
@@ -93,6 +97,7 @@ def run_query(model, processor, config, prompt, image=None,
     print("\n--- Response ---")
     t0 = time.time()
     token_count = 0
+    in_thinking = False
 
     for result in stream_generate(
         model, processor, formatted,
@@ -101,6 +106,16 @@ def run_query(model, processor, config, prompt, image=None,
         temperature=0.7,
     ):
         text = result.text if hasattr(result, 'text') else str(result)
+
+        # Filter thinking channel
+        if "<|channel>thought" in text:
+            in_thinking = True
+        if in_thinking:
+            if "<channel|>" in text:
+                in_thinking = False
+            token_count += 1
+            continue
+
         print(text, end="", flush=True)
         token_count += 1
 
