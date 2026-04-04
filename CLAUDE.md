@@ -26,6 +26,14 @@
 - 날짜 인식: 시스템 프롬프트에 현재 날짜/요일 자동 주입.
 - thinking 필터링: Gemma 4 `<|channel>thought` 블록 자동 제거.
 
+### FLUX.2 이미지 생성 (flux-2-swift-mlx)
+
+- **FLUX.2 Klein 4B / Dev 32B**: 텍스트→이미지, 이미지→이미지 생성. MLX 네이티브 Swift 구현.
+- `setup-flux.sh`로 Xcode 소스 빌드 필요 (프리빌트 바이너리는 metallib 누락 이슈).
+- Gemma 4 (17GB) + FLUX.2-dev int4 (~32GB) = ~49GB. 128GB에서 동시 실행 가능.
+- 모델 자동 다운로드: `~/Library/Caches/models/`에 캐시.
+- FLUX.2-dev는 HuggingFace gated model — HF 토큰 + 모델 페이지에서 access 승인 필요.
+
 ### llm-pipeline.py (Legacy — LM Studio API)
 
 - **LM Studio** (`localhost:1234`): OpenAI 호환 API 서버, MLX 백엔드
@@ -38,6 +46,7 @@
 - `multimodal.py`: Gemma 4 멀티모달 파이프라인. mlx-vlm 직접 추론. `pip install mlx-vlm` 필요.
 - `prompts.py`: 공유 프롬프트 모듈. 날짜 주입, 검색 판별/쿼리 생성, 인용 강제, thinking 필터 등.
 - `web_search.py`: 웹 검색 모듈. `brave_search()`, `tavily_search()`, `search_both()`, `format_search_context()` 제공.
+- `setup-flux.sh`: FLUX.2 CLI 빌드 스크립트. Metal Toolchain + Xcode 소스 빌드 + 바이너리 설치.
 - `llm-pipeline.py`: 이단 파이프라인 (레거시). LM Studio API. Python stdlib만 사용.
 
 ## README Convention
