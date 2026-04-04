@@ -96,7 +96,7 @@ def run_query(model, processor, config, prompt, image=None,
 
     print("\n--- Response ---")
     t0 = time.time()
-    token_count = 0
+    raw_parts = []
     in_thinking = False
 
     for result in stream_generate(
@@ -106,20 +106,22 @@ def run_query(model, processor, config, prompt, image=None,
         temperature=0.7,
     ):
         text = result.text if hasattr(result, 'text') else str(result)
+        raw_parts.append(text)
 
-        # Filter thinking channel
+        # Suppress thinking blocks from streaming output
         if "<|channel>thought" in text:
             in_thinking = True
         if in_thinking:
             if "<channel|>" in text:
                 in_thinking = False
-            token_count += 1
             continue
 
         print(text, end="", flush=True)
-        token_count += 1
 
+    # Final cleanup via regex (handles token-boundary edge cases)
+    full_text = filter_thinking_gemma("".join(raw_parts))
     elapsed = time.time() - t0
+    token_count = len(raw_parts)
     tps = token_count / elapsed if elapsed > 0 else 0
     print(f"\n--- {token_count} tokens in {elapsed:.1f}s ({tps:.1f} tok/s) ---\n")
 

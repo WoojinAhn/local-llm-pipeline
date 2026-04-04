@@ -26,6 +26,7 @@ from prompts import (
     DEEPSEEK_SYSTEM,
     TRANSLATE_KO_TO_EN,
     TRANSLATE_EN_TO_KO,
+    build_search_context_prompt,
     filter_thinking_deepseek,
 )
 
@@ -66,11 +67,6 @@ def load_models():
     print(f"  Qwen loaded in {time.time() - start:.1f}s", flush=True)
 
 
-def _filter_thinking(raw):
-    """Remove <think>...</think> blocks from generated text."""
-    return filter_thinking_deepseek(raw)
-
-
 def _stream_and_collect(model, tokenizer, prompt, max_tokens=2000,
                         stream=True, think_start=False, prompt_cache=None):
     """Stream generation, filter thinking blocks, return clean text."""
@@ -93,7 +89,7 @@ def _stream_and_collect(model, tokenizer, prompt, max_tokens=2000,
     if stream:
         print(flush=True)
 
-    return _filter_thinking("".join(raw_parts))
+    return filter_thinking_deepseek("".join(raw_parts))
 
 
 def translate(text, direction="ko2en", stream=False):
@@ -193,7 +189,7 @@ def pipeline(query, force_search=None):
             ko_snippets = "\n".join(
                 f"{i}. [{r['title']}] {r['snippet']}" for i, r in enumerate(ko_results, 1)
             )
-            translated_snippets = translate(ko_snippets, direction="ko2en")
+            translated_snippets, _ = translate(ko_snippets, direction="ko2en")
             for i, r in enumerate(ko_results):
                 r["snippet"] = ""  # clear original
             # Replace ko_results with single translated block
@@ -207,14 +203,7 @@ def pipeline(query, force_search=None):
     # Stage 3: DeepSeek analysis
     print("  [3/4] DeepSeek R1 analyzing...", flush=True)
     if search_context:
-        analysis_prompt = (
-            f"[Web Search Results]\n{search_context}\n\n"
-            f"IMPORTANT: You MUST cite specific facts, names, dates, and details "
-            f"from the search results above. Do NOT speculate or use hypothetical "
-            f"language (avoid 'may', 'likely', 'could be', 'it is plausible'). "
-            f"If the search results contain the answer, state it as fact.\n\n"
-            f"Question: {english_query}"
-        )
+        analysis_prompt = build_search_context_prompt(search_context, english_query)
     else:
         analysis_prompt = english_query
     english_analysis = analyze(analysis_prompt)
