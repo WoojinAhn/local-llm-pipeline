@@ -19,6 +19,9 @@ import os
 import sys
 import time
 
+from env_loader import load_env
+load_env()
+
 import mlx.core as mx
 from mlx_vlm import load, generate, stream_generate
 from mlx_vlm.prompt_utils import apply_chat_template

@@ -18,6 +18,9 @@ import os
 import sys
 import time
 
+from env_loader import load_env
+load_env()
+
 import mlx.core as mx
 from mlx_lm import load, stream_generate
 from mlx_lm.models.cache import make_prompt_cache
