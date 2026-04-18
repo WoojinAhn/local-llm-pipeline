@@ -2,14 +2,14 @@
 """
 Triple-stage MLX pipeline: translate → analyze → translate.
 
-Qwen3-14B (translator) and DeepSeek R1 70B (analyst) are loaded
-simultaneously — no model swap needed. DeepSeek maintains conversation
-context across turns via mlx-lm prompt cache.
+Qwen3-14B (translator) and GPT-OSS 120B (analyst) are loaded
+simultaneously — no model swap needed. The analyst maintains
+conversation context across turns via mlx-lm prompt cache.
 
 Usage:
   python3 mlx-pipeline.py "한국어 질문"
   python3 mlx-pipeline.py                    # interactive mode
-  python3 mlx-pipeline.py --deepseek-only    # DeepSeek analysis (English in/out)
+  python3 mlx-pipeline.py --analyst-only     # GPT-OSS analysis (English in/out)
   python3 mlx-pipeline.py --qwen-only        # Qwen conversation (Korean)
   python3 mlx-pipeline.py --translate-only   # Translation only (no analysis)
 """
@@ -26,28 +26,30 @@ from mlx_lm import load, stream_generate
 from mlx_lm.models.cache import make_prompt_cache
 
 from prompts import (
-    DEEPSEEK_SYSTEM,
+    ANALYST_SYSTEM,
     TRANSLATE_KO_TO_EN,
     TRANSLATE_EN_TO_KO,
     build_search_context_prompt,
-    filter_thinking_deepseek,
+    filter_thinking_harmony,
 )
 
 # --- Model paths (LM Studio cache first, HuggingFace fallback) ---
 _LMSTUDIO = os.path.expanduser("~/.lmstudio/models")
 
-_DEEPSEEK_LOCAL = os.path.join(_LMSTUDIO, "mlx-community/DeepSeek-R1-Distill-Llama-70B-8bit")
-DEEPSEEK_ID = _DEEPSEEK_LOCAL if os.path.isdir(_DEEPSEEK_LOCAL) else "mlx-community/DeepSeek-R1-Distill-Llama-70B-8bit"
+_ANALYST_LOCAL = os.path.join(_LMSTUDIO, "mlx-community/gpt-oss-120b-4bit")
+ANALYST_ID = _ANALYST_LOCAL if os.path.isdir(_ANALYST_LOCAL) else "mlx-community/gpt-oss-120b-4bit"
 
 QWEN_ID = "mlx-community/Qwen3-14B-4bit"
+
+HARMONY_FINAL_MARKER = "<|channel|>final<|message|>"
 
 # System prompts imported from prompts.py
 
 # --- Models (loaded once at startup) ---
-_deepseek_model = None
-_deepseek_tokenizer = None
-_deepseek_cache = None
-_deepseek_history = []  # English conversation history for DeepSeek
+_analyst_model = None
+_analyst_tokenizer = None
+_analyst_cache = None
+_analyst_history = []  # English conversation history for the analyst
 
 _qwen_model = None
 _qwen_tokenizer = None
@@ -55,14 +57,14 @@ _qwen_tokenizer = None
 
 def load_models():
     """Load both models into memory."""
-    global _deepseek_model, _deepseek_tokenizer, _deepseek_cache
+    global _analyst_model, _analyst_tokenizer, _analyst_cache
     global _qwen_model, _qwen_tokenizer
 
-    print(f"  Loading DeepSeek R1 ({DEEPSEEK_ID})...", flush=True)
+    print(f"  Loading analyst ({ANALYST_ID})...", flush=True)
     start = time.time()
-    _deepseek_model, _deepseek_tokenizer = load(DEEPSEEK_ID)
-    _deepseek_cache = make_prompt_cache(_deepseek_model)
-    print(f"  DeepSeek loaded in {time.time() - start:.1f}s", flush=True)
+    _analyst_model, _analyst_tokenizer = load(ANALYST_ID)
+    _analyst_cache = make_prompt_cache(_analyst_model)
+    print(f"  Analyst loaded in {time.time() - start:.1f}s", flush=True)
 
     print(f"  Loading Qwen3-14B ({QWEN_ID})...", flush=True)
     start = time.time()
@@ -70,29 +72,52 @@ def load_models():
     print(f"  Qwen loaded in {time.time() - start:.1f}s", flush=True)
 
 
-def _stream_and_collect(model, tokenizer, prompt, max_tokens=2000,
-                        stream=True, think_start=False, prompt_cache=None):
-    """Stream generation, filter thinking blocks, return clean text."""
+def _stream_qwen(model, tokenizer, prompt, max_tokens=2000, stream=True):
+    """Stream Qwen generation (no thinking-block filtering)."""
+    parts = []
+    for response in stream_generate(
+        model, tokenizer, prompt=prompt, max_tokens=max_tokens,
+    ):
+        parts.append(response.text)
+        if stream:
+            print(response.text, end="", flush=True)
+    if stream:
+        print(flush=True)
+    return "".join(parts).strip()
+
+
+def _stream_analyst(model, tokenizer, prompt, max_tokens=4000,
+                    stream=True, prompt_cache=None):
+    """Stream analyst (harmony-format) generation.
+
+    Suppresses the analysis channel; streams only the final channel to stdout.
+    Returns the filtered final-channel text.
+    """
     raw_parts = []
-    in_think = think_start
+    in_final = False
+    buffer = ""
+
     for response in stream_generate(
         model, tokenizer, prompt=prompt,
         max_tokens=max_tokens, prompt_cache=prompt_cache,
     ):
         raw_parts.append(response.text)
-        if "<think>" in response.text:
-            in_think = True
-        if in_think:
-            if "</think>" in response.text:
-                in_think = False
+        if in_final:
+            if stream:
+                print(response.text, end="", flush=True)
             continue
-        if stream:
-            print(response.text, end="", flush=True)
+        buffer += response.text
+        if HARMONY_FINAL_MARKER in buffer:
+            in_final = True
+            tail = buffer.split(HARMONY_FINAL_MARKER, 1)[1]
+            buffer = ""
+            if stream and tail:
+                print(tail, end="", flush=True)
 
     if stream:
         print(flush=True)
 
-    return filter_thinking_deepseek("".join(raw_parts))
+    return filter_thinking_harmony("".join(raw_parts))
 
 
 def translate(text, direction="ko2en", stream=False):
@@ -106,7 +131,7 @@ def translate(text, direction="ko2en", stream=False):
         messages, add_generation_prompt=True, tokenize=False,
         enable_thinking=False,
     )
-    raw = _stream_and_collect(
+    raw = _stream_qwen(
         _qwen_model, _qwen_tokenizer, prompt,
         max_tokens=2000, stream=stream,
     )
@@ -126,41 +151,34 @@ def translate(text, direction="ko2en", stream=False):
 
 
 def analyze(text, stream=True):
-    """Analyze text using DeepSeek R1 with conversation context."""
-    global _deepseek_history, _deepseek_cache
+    """Analyze text using the GPT-OSS analyst with conversation context."""
+    global _analyst_history, _analyst_cache
 
-    # Build full conversation with history
-    # First message includes system prompt merged into user message
-    if not _deepseek_history:
-        _deepseek_history.append({
-            "role": "user",
-            "content": f"{DEEPSEEK_SYSTEM}\n\n{text}",
-        })
-    else:
-        _deepseek_history.append({"role": "user", "content": text})
+    if not _analyst_history:
+        _analyst_history.append({"role": "system", "content": ANALYST_SYSTEM})
+    _analyst_history.append({"role": "user", "content": text})
 
-    prompt = _deepseek_tokenizer.apply_chat_template(
-        _deepseek_history, add_generation_prompt=True, tokenize=False,
+    prompt = _analyst_tokenizer.apply_chat_template(
+        _analyst_history, add_generation_prompt=True, tokenize=False,
     )
 
-    result = _stream_and_collect(
-        _deepseek_model, _deepseek_tokenizer, prompt,
-        max_tokens=4000, stream=stream, think_start=True,
-        prompt_cache=_deepseek_cache,
+    result = _stream_analyst(
+        _analyst_model, _analyst_tokenizer, prompt,
+        max_tokens=4000, stream=stream,
+        prompt_cache=_analyst_cache,
     )
 
-    # Append assistant response to history
-    _deepseek_history.append({"role": "assistant", "content": result})
+    _analyst_history.append({"role": "assistant", "content": result})
 
     return result
 
 
 def reset_context():
-    """Reset DeepSeek conversation context."""
-    global _deepseek_history, _deepseek_cache
-    _deepseek_history = []
-    if _deepseek_model is not None:
-        _deepseek_cache = make_prompt_cache(_deepseek_model)
+    """Reset analyst conversation context."""
+    global _analyst_history, _analyst_cache
+    _analyst_history = []
+    if _analyst_model is not None:
+        _analyst_cache = make_prompt_cache(_analyst_model)
     print("  [Context reset]\n", flush=True)
 
 
@@ -186,7 +204,7 @@ def pipeline(query, force_search=None):
         hit_count = len(ko_results) + len(en_results)
         print(f"  → {hit_count} results found", flush=True)
 
-        # Translate Korean snippets to English for DeepSeek
+        # Translate Korean snippets to English for the analyst
         if ko_results:
             print("  → Translating Korean results to English...", flush=True)
             ko_snippets = "\n".join(
@@ -203,8 +221,8 @@ def pipeline(query, force_search=None):
     else:
         print("  [2/4] Search skipped\n", flush=True)
 
-    # Stage 3: DeepSeek analysis
-    print("  [3/4] DeepSeek R1 analyzing...", flush=True)
+    # Stage 3: Analyst reasoning
+    print("  [3/4] GPT-OSS analyzing...", flush=True)
     if search_context:
         analysis_prompt = build_search_context_prompt(search_context, english_query)
     else:
@@ -232,8 +250,8 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     flags = [a for a in sys.argv[1:] if a.startswith("--")]
 
-    if "--deepseek-only" in flags:
-        mode = "deepseek"
+    if "--analyst-only" in flags:
+        mode = "analyst"
     elif "--qwen-only" in flags:
         mode = "qwen"
     elif "--translate-only" in flags:
@@ -242,11 +260,11 @@ def main():
     query = " ".join(args) if args else None
 
     # Load models
-    if mode in ("deepseek",):
-        print("Loading DeepSeek R1...", flush=True)
-        global _deepseek_model, _deepseek_tokenizer, _deepseek_cache
-        _deepseek_model, _deepseek_tokenizer = load(DEEPSEEK_ID)
-        _deepseek_cache = make_prompt_cache(_deepseek_model)
+    if mode == "analyst":
+        print("Loading analyst...", flush=True)
+        global _analyst_model, _analyst_tokenizer, _analyst_cache
+        _analyst_model, _analyst_tokenizer = load(ANALYST_ID)
+        _analyst_cache = make_prompt_cache(_analyst_model)
     elif mode in ("qwen", "translate"):
         print("Loading Qwen3-14B...", flush=True)
         global _qwen_model, _qwen_tokenizer
@@ -281,7 +299,7 @@ def main():
     quit / exit           종료
 
   CLI 모드:
-    --deepseek-only       DeepSeek 영어 분석만
+    --analyst-only        GPT-OSS 영어 분석만
     --qwen-only           Qwen 한국어 대화만
     --translate-only      번역만 (분석 없이)
 """)
@@ -298,7 +316,7 @@ def main():
             force_search = False
             user_input = user_input[10:]
 
-        if mode == "deepseek":
+        if mode == "analyst":
             analyze(user_input)
             print()
         elif mode == "qwen":
@@ -310,7 +328,7 @@ def main():
                 messages, add_generation_prompt=True, tokenize=False,
                 enable_thinking=False,
             )
-            _stream_and_collect(_qwen_model, _qwen_tokenizer, prompt)
+            _stream_qwen(_qwen_model, _qwen_tokenizer, prompt)
             print()
         elif mode == "translate":
             result, needs_search = translate(user_input, direction="ko2en")

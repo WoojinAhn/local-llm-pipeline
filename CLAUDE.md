@@ -4,19 +4,20 @@
 
 로컬 LLM 파이프라인. 128GB 통합 메모리에서 모델 스왑 없이 동작하는 두 가지 파이프라인 제공:
 
-1. **mlx-pipeline** (삼단): Qwen3-14B (번역) + DeepSeek R1 70B (분석). 한자 혼입 없는 한국어 분석 결과물 생성.
+1. **mlx-pipeline** (삼단): Qwen3-14B (번역) + GPT-OSS 120B (분석). 한자 혼입 없는 한국어 분석 결과물 생성.
 2. **multimodal** (단일 모델): Gemma 4 31B. 텍스트+이미지 멀티모달 분석. 한국어 네이티브 지원으로 번역 불필요.
 
 ## Architecture
 
 ### mlx-pipeline.py (Primary — mlx-lm 직접 추론)
 
-- **DeepSeek R1 Distill Llama 70B 8-bit MLX** (~75GB): 영어 분석/추론 전용. S급 분석력.
+- **GPT-OSS 120B 4-bit MLX** (~65GB): 영어 분석/추론 전용. MoE (총 116.8B / active 5.1B), 128K 컨텍스트, MMLU-Pro 90.0.
 - **Qwen3-14B 4-bit MLX** (~7.7GB): 한영 양방향 번역 전용. 한자 혼입 0% (10건 테스트 검증).
-- 두 모델 동시 로딩 (~83GB). 128GB에서 여유 ~30GB.
+- 두 모델 동시 로딩 (~73GB). 128GB에서 여유 ~55GB.
 - 삼단 파이프라인: 한→영 번역 → 영어 분석 → 영→한 번역.
-- 선택적 웹 검색: Qwen3-14B가 번역 시 검색 필요 여부 판별 (SEARCH:yes/no). 검색 필요 시 Brave Search (한국어) + Tavily (영어) 병렬 실행. 한국어 검색 결과는 Qwen으로 영어 번역 후 DeepSeek 컨텍스트에 주입 (DeepSeek이 한국어 컨텍스트를 무시하는 이슈 우회).
-- 대화 컨텍스트 유지: mlx-lm `prompt_cache`로 DeepSeek 대화 히스토리 누적 (KV 캐시 재사용, 이전 턴 재계산 없음). `/reset`으로 초기화.
+- 선택적 웹 검색: Qwen3-14B가 번역 시 검색 필요 여부 판별 (SEARCH:yes/no). 검색 필요 시 Brave Search (한국어) + Tavily (영어) 병렬 실행. 한국어 검색 결과는 Qwen으로 영어 번역 후 분석 컨텍스트에 주입 (분석 모델이 한국어를 네이티브로 처리하지 않으므로 우회).
+- 대화 컨텍스트 유지: mlx-lm `prompt_cache`로 분석 모델 대화 히스토리 누적 (KV 캐시 재사용, 이전 턴 재계산 없음). `/reset`으로 초기화.
+- 출력 필터링: GPT-OSS harmony 포맷의 `analysis` 채널은 숨기고 `final` 채널만 표시.
 
 ### multimodal.py (Gemma 4 — mlx-vlm 직접 추론)
 
@@ -61,18 +62,18 @@
 - multimodal: `pip install mlx-vlm` 필요 (venv 사용 권장). Gemma 4 모델은 HuggingFace에서 다운로드 (HF 토큰 권장).
 - llm-pipeline: 외부 패키지 없이 Python stdlib만 사용
 - 모델 경로: LM Studio 캐시(`~/.lmstudio/models/`) 우선, HuggingFace 캐시(`~/.cache/huggingface/hub/`), HuggingFace ID 폴백
-- DeepSeek chat template: system role 대신 user message에 지시사항 병합 (mlx-lm에서 system role이 한국어 입력을 무시하는 이슈 우회)
+- GPT-OSS는 harmony 포맷 — `<|channel|>analysis<|message|>…<|end|>` 에 CoT를, `<|channel|>final<|message|>…` 에 최종 답변을 출력. `filter_thinking_harmony()` 로 `final` 채널만 추출
 - 시스템 프롬프트 수정: `prompts.py` 내 상수/함수 편집 (양쪽 파이프라인 공유)
 - 웹 검색 API 키: `BRAVE_API_KEY`, `TAVILY_API_KEY` 환경변수 (선택 — 미설정 시 검색 단계를 graceful skip)
 
 ## Known Issues
 
 - Ollama M5 Max Metal 크래시 (ollama#14432): `brew install ollama`(소스 컴파일)에서만 발생. `brew install --cask ollama`(프리빌트 바이너리)로 설치하면 정상 동작.
-- DeepSeek R1의 thinking 과정에서 중국어가 나오는 건 정상 (출력에서 `<think>` 블록을 필터링).
-- DeepSeek R1 mlx-lm: chat template의 system role이 한국어 입력과 충돌 → user message에 병합하여 해결.
+- GPT-OSS 120B MoE: active 5.1B이라 추론 속도는 빠르지만, 총 가중치 ~65GB + KV 캐시로 긴 컨텍스트 사용 시 128GB에서 메모리 압박 가능성 있음 (커뮤니티 보고 편차 있음).
 - Qwen 계열 한자 혼입 위험: Qwen3-14B 4-bit에서는 10건 테스트 결과 0건. 단, Qwen3.5-27B 4-bit에서는 중국어 성어 혼입 확인됨 — 모델 크기/양자화에 따라 달라질 수 있음.
-- DeepSeek R1은 추론/분석 특화 모델. 사실 기반 지식 질의에서는 웹 검색 없이 가정법으로 답변하는 한계 있음 → 웹 검색 통합으로 해결.
-- DeepSeek R1은 한국어 컨텍스트를 제대로 읽지 못함. 검색 결과가 한국어일 경우 반드시 영어로 번역 후 주입해야 함.
+- GPT-OSS 120B는 한국어 네이티브가 아님 → 삼단 구조(Qwen 번역 래퍼) 유지 필요.
+- 분석 모델은 사실 기반 지식 질의에서 웹 검색 없이 가정법으로 답변하는 한계 있음 → 웹 검색 통합으로 해결.
+- 분석 모델에 한국어 검색 결과를 직접 주입하면 무시할 수 있음. 검색 결과가 한국어일 경우 반드시 영어로 번역 후 주입.
 - LM Studio CLI(`lms`)는 PATH에 자동 등록 안 됨. 전체 경로: `/Applications/LM Studio.app/Contents/Resources/app/.webpack/lms`
 - mlx-lm은 gemma4 아키텍처를 아직 미지원 (0.31.1 기준). Gemma 4 실행에는 mlx-vlm 필요.
 - Gemma 4 모델 다운로드 시 HuggingFace 토큰 없으면 rate limit 발생. `HF_TOKEN` 환경변수 설정 권장.

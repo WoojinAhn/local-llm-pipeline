@@ -10,7 +10,7 @@ MacBook Pro M5 Max (128GB)에서 로컬 LLM 파이프라인.
 
 **두 가지 파이프라인 제공:**
 
-1. **mlx-pipeline** (삼단): Qwen3-14B (번역) + DeepSeek R1 70B (분석). 모델 스왑 없이 동시 로딩. 한자 혼입 없는 순수 한글 결과물 생성.
+1. **mlx-pipeline** (삼단): Qwen3-14B (번역) + GPT-OSS 120B (분석). 모델 스왑 없이 동시 로딩. 한자 혼입 없는 순수 한글 결과물 생성.
 2. **multimodal** (단일 모델): Gemma 4 31B. 텍스트+이미지 멀티모달 분석. 한국어 네이티브 지원으로 번역 불필요. 검색 쿼리 자동 리라이팅 + 날짜 인식.
 
 **웹 검색 통합**: 두 파이프라인 모두 Brave Search (한국어) + Tavily (영어) 병렬 검색 지원. 검색 필요 여부 자동 판별.
@@ -28,14 +28,14 @@ MacBook Pro M5 Max (128GB)에서 로컬 LLM 파이프라인.
 
 ### 구조
 
-> 동시 로딩: DeepSeek R1 70B (~75GB) + Qwen3-14B (~7.7GB) = ~83GB / 128GB
+> 동시 로딩: GPT-OSS 120B (~65GB) + Qwen3-14B (~7.7GB) = ~73GB / 128GB
 
 ```mermaid
 flowchart TD
     A["🇰🇷 한국어 질문"] --> B["Qwen3-14B<br/>한→영 번역 + 검색 판별"]
     B --> C{SEARCH?}
     C -->|yes| D["Brave 한국어 + Tavily 영어<br/>병렬 검색"]
-    C -->|no| E["DeepSeek R1 70B<br/>영어 분석"]
+    C -->|no| E["GPT-OSS 120B<br/>영어 분석 (MoE, active 5.1B)"]
     D --> D2["Qwen3-14B<br/>한국어 결과 → 영어 번역"]
     D2 --> E
     E --> F["Qwen3-14B<br/>영→한 번역"]
@@ -61,9 +61,10 @@ flowchart TD
 | 모델 | 양자화 | 메모리 | 분석력 | 한국어 | 선택 |
 |------|--------|--------|--------|--------|------|
 | Qwen 3 32B | 4-bit | ~18GB | A | A | 메모리 낭비 |
-| Qwen 2.5 72B | 8-bit | ~75GB | A | A+ | 분석 깊이 부족 |
-| DeepSeek R1 70B | 8-bit | ~75GB | **S** | B+ | **채택** |
-| Mistral Large 123B | 4-bit | ~70GB | A+ | B- | 범용이라 R1보다 분석 약함 |
+| DeepSeek R1 Distill 70B | 8-bit | ~75GB | A+ | B+ | dense 70B, think 블록 장황, MMLU-Pro ~80 |
+| **GPT-OSS 120B** | **4-bit** | **~65GB** | **S** | **B+** | **채택** (MoE, active 5.1B, MMLU-Pro 90.0, 128K 컨텍스트) |
+| Mistral Large 123B | 4-bit | ~70GB | A+ | B- | 범용이라 분석 특화 약함 |
+| Qwen 3.5 122B-A10B | 4-bit | ~60GB | A+ | B | MoE 대안 — 영어 추론 GPT-OSS 우위 |
 | Qwen 3 235B-A22B | 4-bit | ~130GB | S+ | A | 128GB에 안 들어감 |
 
 **3. 삼단 파이프라인 — 듀얼에서 진화**
@@ -71,10 +72,22 @@ flowchart TD
 초기에는 DeepSeek 분석 → Qwen 3 32B 번역의 이단 파이프라인이었으나, 세 가지 문제를 발견:
 
 - **모델 스왑**: LM Studio가 한 모델만 로딩 → ~10초 스왑 오버헤드
-- **한국어 입력**: DeepSeek R1이 mlx-lm에서 한국어 입력을 무시 (chat template 이슈)
+- **한국어 입력**: 분석 모델이 mlx-lm에서 한국어 입력을 제대로 처리하지 못함
 - **한자 혼입 위험**: Qwen3 32B/27B도 중국어 혼입 가능성 존재 (Qwen3.5-27B에서 `扬长而去` 혼입 확인)
 
-해결: 작은 번역 전용 모델(Qwen3-14B, ~7.7GB)을 도입하여 DeepSeek과 동시 로딩. 한국어 입력을 먼저 영어로 번역해서 DeepSeek에 전달하고, 결과를 다시 한국어로 번역.
+해결: 작은 번역 전용 모델(Qwen3-14B, ~7.7GB)을 도입하여 분석 모델과 동시 로딩. 한국어 입력을 먼저 영어로 번역해서 분석 모델에 전달하고, 결과를 다시 한국어로 번역.
+
+**3-1. 분석 모델 교체 — DeepSeek R1 Distill 70B → GPT-OSS 120B**
+
+초기 분석 모델이었던 DeepSeek R1 Distill Llama 70B 8-bit에서 GPT-OSS 120B 4-bit MLX로 교체. 얻은 것:
+
+- 메모리: 75GB → 65GB
+- 아키텍처: dense 70B → MoE (active 5.1B) — 추론 속도 개선
+- 벤치: MMLU-Pro ~80 → 90.0, AIME 2024/2025 distill-tier → 96.6 / 97.9 (with tools)
+- 컨텍스트: 32K → 128K
+- CoT 스타일: 장황한 `<think>` 블록 → harmony `analysis` 채널, 간결
+
+한국어 네이티브가 아닌 점은 동일하므로 Qwen3-14B 번역 래퍼는 유지.
 
 **4. 번역 모델 선택 — Qwen3-14B 4-bit**
 
@@ -87,7 +100,7 @@ flowchart TD
 | Qwen3-14B 8-bit | 14.6GB | A | 0건 | 메모리 대비 소폭 개선 |
 | Qwen3.5-27B 4-bit | 14.1GB | A+ | **1건** ❌ | 중국어 성어 혼입 |
 
-Qwen3-14B 4-bit: 번역 품질과 한자 안전성의 최적 균형. DeepSeek과 합산 ~83GB로 128GB에 여유 ~30GB.
+Qwen3-14B 4-bit: 번역 품질과 한자 안전성의 최적 균형. GPT-OSS 120B과 합산 ~73GB로 128GB에 여유 ~55GB.
 
 ### 요구 사항
 
@@ -95,7 +108,7 @@ Qwen3-14B 4-bit: 번역 품질과 한자 안전성의 최적 균형. DeepSeek과
 - Python 3.10+
 - mlx-lm: `pip install mlx-lm`
 - 모델 (자동 다운로드 또는 수동):
-  - DeepSeek R1 70B: `mlx-community/DeepSeek-R1-Distill-Llama-70B-8bit` (~75GB)
+  - GPT-OSS 120B: `mlx-community/gpt-oss-120b-4bit` (~65GB)
   - Qwen3-14B: `mlx-community/Qwen3-14B-4bit` (~7.7GB)
 - 웹 검색 API 키 (선택 — 미설정 시 검색 단계 건너뜀):
   - `BRAVE_API_KEY`: [Brave Search API](https://brave.com/search/api/)
@@ -124,8 +137,8 @@ python3 mlx-pipeline.py
 # 웹 검색 건너뛰기
 # /nosearch 인공지능의 철학적 의미를 분석해줘
 
-# DeepSeek만 (영어 입출력)
-python3 mlx-pipeline.py --deepseek-only "Analyze the impact of AI on labor markets"
+# 분석 모델만 (영어 입출력)
+python3 mlx-pipeline.py --analyst-only "Analyze the impact of AI on labor markets"
 
 # Qwen만 (한국어 대화)
 python3 mlx-pipeline.py --qwen-only "오늘 할 일 정리해줘"
@@ -162,9 +175,10 @@ python3 multimodal.py --no-search "이 주장을 분석해줘"
 
 ### 제한 사항
 
-- DeepSeek R1은 "thinking" 시간이 있어 복잡한 질문일수록 응답 지연
+- GPT-OSS 120B의 harmony `analysis` 채널로 reasoning 시간이 소요됨 — 복잡한 질문일수록 응답 지연
 - Qwen 번역은 기능적 수준 (전문 번역가 수준은 아님, 하지만 의미 전달 충분)
-- 최초 실행 시 모델 다운로드 필요 (~83GB)
+- 최초 실행 시 모델 다운로드 필요 (~73GB)
+- GPT-OSS는 한국어 네이티브가 아님 → 삼단 구조(번역 래퍼) 필수
 - ~~Ollama는 M5 Max Metal 크래시 이슈로 사용 불가~~ → `brew install --cask ollama`로 설치 시 정상 동작 확인 ([ollama#14432](https://github.com/ollama/ollama/issues/14432))
 
 ### LM Studio 버전 (레거시)
@@ -184,7 +198,7 @@ Local LLM pipelines on MacBook Pro M5 Max (128GB).
 
 **Two pipelines available:**
 
-1. **mlx-pipeline** (triple-stage): Qwen3-14B (translation) + DeepSeek R1 70B (analysis). Both models loaded simultaneously — zero model swap. Pure Hangul output without Chinese/Japanese character contamination.
+1. **mlx-pipeline** (triple-stage): Qwen3-14B (translation) + GPT-OSS 120B (analysis). Both models loaded simultaneously — zero model swap. Pure Hangul output without Chinese/Japanese character contamination.
 2. **multimodal** (single model): Gemma 4 31B. Text+image multimodal analysis. Native Korean support — no translation pipeline needed. Automatic search query rewriting + date awareness.
 
 **Web search integration**: Both pipelines support Brave Search (Korean) + Tavily (English) parallel search with automatic need detection.
@@ -202,14 +216,14 @@ Local LLM pipelines on MacBook Pro M5 Max (128GB).
 
 ### Architecture
 
-> Loaded simultaneously: DeepSeek R1 70B (~75GB) + Qwen3-14B (~7.7GB) = ~83GB / 128GB
+> Loaded simultaneously: GPT-OSS 120B (~65GB) + Qwen3-14B (~7.7GB) = ~73GB / 128GB
 
 ```mermaid
 flowchart TD
     A["🇰🇷 Korean Input"] --> B["Qwen3-14B<br/>KR→EN Translation + Search Judgment"]
     B --> C{SEARCH?}
     C -->|yes| D["Brave Korean + Tavily English<br/>Parallel Search"]
-    C -->|no| E["DeepSeek R1 70B<br/>English Analysis"]
+    C -->|no| E["GPT-OSS 120B<br/>English Analysis (MoE, 5.1B active)"]
     D --> D2["Qwen3-14B<br/>Korean Results → English Translation"]
     D2 --> E
     E --> F["Qwen3-14B<br/>EN→KR Translation"]
@@ -233,20 +247,33 @@ Initially installed Ollama, but it crashes on M5 Max due to a Metal backend issu
 | Model | Quant | Memory | Analysis | Korean | Decision |
 |-------|-------|--------|----------|--------|----------|
 | Qwen 3 32B | 4-bit | ~18GB | A | A | Underutilizes hardware |
-| Qwen 2.5 72B | 8-bit | ~75GB | A | A+ | Insufficient analysis depth |
-| DeepSeek R1 70B | 8-bit | ~75GB | **S** | B+ | **Selected** |
-| Mistral Large 123B | 4-bit | ~70GB | A+ | B- | General-purpose, weaker than R1 |
+| DeepSeek R1 Distill 70B | 8-bit | ~75GB | A+ | B+ | Dense 70B, verbose think blocks, MMLU-Pro ~80 |
+| **GPT-OSS 120B** | **4-bit** | **~65GB** | **S** | **B+** | **Selected** (MoE, 5.1B active, MMLU-Pro 90.0, 128K context) |
+| Mistral Large 123B | 4-bit | ~70GB | A+ | B- | General-purpose, weaker at analysis |
+| Qwen 3.5 122B-A10B | 4-bit | ~60GB | A+ | B | MoE alternative — English reasoning weaker than GPT-OSS |
 | Qwen 3 235B-A22B | 4-bit | ~130GB | S+ | A | Doesn't fit in 128GB |
 
 **3. Triple-Stage Pipeline — Evolution from Dual**
 
-The initial dual pipeline (DeepSeek → Qwen 32B translation) had three problems:
+The initial dual pipeline (analyst → Qwen 32B translation) had three problems:
 
 - **Model swap**: LM Studio loads one model at a time → ~10s swap overhead
-- **Korean input**: DeepSeek R1 ignores Korean input in mlx-lm (chat template issue)
+- **Korean input**: the analyst model fails to handle Korean input natively under mlx-lm
 - **Character contamination risk**: Qwen 32B/27B can also leak Chinese characters (confirmed `扬长而去` in Qwen3.5-27B output)
 
-Solution: introduce a small translator model (Qwen3-14B, ~7.7GB) loaded alongside DeepSeek. Korean input is translated to English first, then analyzed, then translated back.
+Solution: introduce a small translator model (Qwen3-14B, ~7.7GB) loaded alongside the analyst. Korean input is translated to English first, then analyzed, then translated back.
+
+**3-1. Analyst Swap — DeepSeek R1 Distill 70B → GPT-OSS 120B**
+
+Replaced the original analyst (DeepSeek R1 Distill Llama 70B 8-bit) with GPT-OSS 120B 4-bit MLX. Gains:
+
+- Memory: 75GB → 65GB
+- Architecture: dense 70B → MoE (5.1B active) — faster per-token inference
+- Benchmarks: MMLU-Pro ~80 → 90.0, AIME 2024/2025 distill-tier → 96.6 / 97.9 (with tools)
+- Context: 32K → 128K
+- CoT style: verbose `<think>` blocks → harmony `analysis` channel, concise
+
+GPT-OSS is still not Korean-native, so the Qwen3-14B translation wrapper stays.
 
 **4. Translation Model — Qwen3-14B 4-bit**
 
@@ -265,7 +292,7 @@ Tested across 10 categories (daily, proverbs, technical docs, slang, business, n
 - Python 3.10+
 - mlx-lm: `pip install mlx-lm`
 - Models (auto-downloaded or manual):
-  - DeepSeek R1 70B: `mlx-community/DeepSeek-R1-Distill-Llama-70B-8bit` (~75GB)
+  - GPT-OSS 120B: `mlx-community/gpt-oss-120b-4bit` (~65GB)
   - Qwen3-14B: `mlx-community/Qwen3-14B-4bit` (~7.7GB)
 - Web search API keys (optional — search step skipped gracefully if missing):
   - `BRAVE_API_KEY`: [Brave Search API](https://brave.com/search/api/)
@@ -294,8 +321,8 @@ python3 mlx-pipeline.py
 # Skip web search
 # /nosearch Analyze the philosophical meaning of AI
 
-# DeepSeek only (English in/out)
-python3 mlx-pipeline.py --deepseek-only "question"
+# Analyst only (English in/out)
+python3 mlx-pipeline.py --analyst-only "question"
 
 # Qwen only (Korean conversation)
 python3 mlx-pipeline.py --qwen-only "질문"
@@ -332,9 +359,10 @@ Interactive commands:
 
 ### Limitations
 
-- DeepSeek R1 has "thinking" latency — longer for complex queries
+- GPT-OSS 120B has harmony `analysis` channel latency — longer for complex queries
 - Qwen translation is functional, not professional-grade (but sufficient for comprehension)
-- First run downloads ~83GB of model weights
+- First run downloads ~73GB of model weights
+- GPT-OSS is not Korean-native → triple-stage (translation wrapper) is required
 - ~~Ollama unusable on M5 Max due to Metal crash~~ → works with `brew install --cask ollama` (pre-built binary) ([ollama#14432](https://github.com/ollama/ollama/issues/14432))
 
 ### LM Studio Version (Legacy)

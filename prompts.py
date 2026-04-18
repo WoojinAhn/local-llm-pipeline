@@ -89,10 +89,22 @@ def build_search_context_prompt(search_context, question):
 
 # --- Thinking filters ---
 
-def filter_thinking_deepseek(text):
-    """Remove <think>...</think> blocks (DeepSeek R1)."""
-    text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
-    text = re.sub(r"^.*?</think>\s*", "", text, flags=re.DOTALL)
+def filter_thinking_harmony(text):
+    """Extract final-channel content from GPT-OSS harmony output.
+
+    GPT-OSS emits reasoning into <|channel|>analysis<|message|>...<|end|>
+    and the user-facing answer into <|channel|>final<|message|>...<|return|>.
+    """
+    final_match = re.search(
+        r"<\|channel\|>final<\|message\|>(.*?)(?:<\|return\|>|<\|end\|>|$)",
+        text, flags=re.DOTALL,
+    )
+    if final_match:
+        return final_match.group(1).strip()
+    text = re.sub(
+        r"<\|channel\|>analysis<\|message\|>.*?<\|end\|>\s*",
+        "", text, flags=re.DOTALL,
+    )
     return text.strip()
 
 
@@ -105,10 +117,10 @@ def filter_thinking_gemma(text):
 
 
 # ============================================================
-# mlx-pipeline specific — DeepSeek R1 + Qwen translation
+# mlx-pipeline specific — GPT-OSS analyst + Qwen translation
 # ============================================================
 
-DEEPSEEK_SYSTEM = (
+ANALYST_SYSTEM = (
     "You are an expert analyst. Respond ONLY in English. "
     "Provide thorough analysis with clear reasoning. "
     "Follow the user's requested format, length, and tone. "
