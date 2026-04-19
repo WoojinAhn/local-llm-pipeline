@@ -24,6 +24,9 @@ load_env()
 import mlx.core as mx
 from mlx_lm import load, stream_generate
 from mlx_lm.models.cache import make_prompt_cache
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.rule import Rule
 
 from prompts import (
     ANALYST_SYSTEM,
@@ -32,6 +35,16 @@ from prompts import (
     build_search_context_prompt,
     filter_thinking_harmony,
 )
+
+console = Console()
+
+
+def _stage(num, total, label):
+    console.print(f"[bold cyan]\\[{num}/{total}][/] {label}")
+
+
+def _info(msg):
+    console.print(f"  [dim]{msg}[/]")
 
 # --- Model paths (LM Studio cache first, HuggingFace fallback) ---
 _LMSTUDIO = os.path.expanduser("~/.lmstudio/models")
@@ -60,16 +73,16 @@ def load_models():
     global _analyst_model, _analyst_tokenizer, _analyst_cache
     global _qwen_model, _qwen_tokenizer
 
-    print(f"  Loading analyst ({ANALYST_ID})...", flush=True)
+    console.print(f"  [dim]Loading analyst ({ANALYST_ID})...[/]")
     start = time.time()
     _analyst_model, _analyst_tokenizer = load(ANALYST_ID)
     _analyst_cache = make_prompt_cache(_analyst_model)
-    print(f"  Analyst loaded in {time.time() - start:.1f}s", flush=True)
+    console.print(f"  [green]Analyst loaded[/] [dim]in {time.time() - start:.1f}s[/]")
 
-    print(f"  Loading Qwen3-14B ({QWEN_ID})...", flush=True)
+    console.print(f"  [dim]Loading Qwen3-14B ({QWEN_ID})...[/]")
     start = time.time()
     _qwen_model, _qwen_tokenizer = load(QWEN_ID)
-    print(f"  Qwen loaded in {time.time() - start:.1f}s", flush=True)
+    console.print(f"  [green]Qwen loaded[/] [dim]in {time.time() - start:.1f}s[/]")
 
 
 def _stream_qwen(model, tokenizer, prompt, max_tokens=2000, stream=True):
@@ -179,7 +192,7 @@ def reset_context():
     _analyst_history = []
     if _analyst_model is not None:
         _analyst_cache = make_prompt_cache(_analyst_model)
-    print("  [Context reset]\n", flush=True)
+    console.print("  [yellow]\\[Context reset][/]\n")
 
 
 def pipeline(query, force_search=None):
@@ -188,9 +201,9 @@ def pipeline(query, force_search=None):
     force_search: True=always, False=never, None=auto (Qwen judges)
     """
     # Stage 1: Translate + judge search
-    print("  [1/4] Translating to English...", flush=True)
+    _stage(1, 4, "Translating to English...")
     english_query, needs_search = translate(query, direction="ko2en")
-    print(f"  → {english_query}", flush=True)
+    _info(f"→ {english_query}")
 
     if force_search is not None:
         needs_search = force_search
@@ -198,15 +211,15 @@ def pipeline(query, force_search=None):
     # Stage 2: Web search (if needed)
     search_context = ""
     if needs_search:
-        print("  [2/4] Searching web...", flush=True)
+        _stage(2, 4, "Searching web...")
         from web_search import search_both, format_search_context
         ko_results, en_results = search_both(query, english_query)
         hit_count = len(ko_results) + len(en_results)
-        print(f"  → {hit_count} results found", flush=True)
+        _info(f"→ {hit_count} results found")
 
         # Translate Korean snippets to English for the analyst
         if ko_results:
-            print("  → Translating Korean results to English...", flush=True)
+            _info("→ Translating Korean results to English...")
             ko_snippets = "\n".join(
                 f"{i}. [{r['title']}] {r['snippet']}" for i, r in enumerate(ko_results, 1)
             )
@@ -217,32 +230,32 @@ def pipeline(query, force_search=None):
             ko_results = [{"title": "Korean sources (translated)", "url": "", "snippet": translated_snippets}]
 
         search_context = format_search_context(ko_results, en_results)
-        print(flush=True)
+        console.print()
     else:
-        print("  [2/4] Search skipped\n", flush=True)
+        _stage(2, 4, "[dim]Search skipped[/]")
+        console.print()
 
-    # Stage 3: Analyst reasoning
-    print("  [3/4] GPT-OSS analyzing...", flush=True)
+    # Stage 3: Reasoner analysis — spinner during generation, markdown on finish
+    _stage(3, 4, "GPT-OSS analyzing...")
     if search_context:
         analysis_prompt = build_search_context_prompt(search_context, english_query)
     else:
         analysis_prompt = english_query
-    english_analysis = analyze(analysis_prompt)
+    with console.status("[cyan]reasoning...[/]", spinner="dots"):
+        english_analysis = analyze(analysis_prompt, stream=False)
 
-    # Stage 4: Translate to Korean
-    print(f"\n  [4/4] Translating to Korean...", flush=True)
-    korean_result = translate(english_analysis, direction="en2ko", stream=True)
+    # Stage 4: Translate to Korean (also silent, rendered in the final block)
+    _stage(4, 4, "Translating to Korean...")
+    with console.status("[cyan]translating...[/]", spinner="dots"):
+        korean_result = translate(english_analysis, direction="en2ko", stream=False)
 
-    return f"""
-{'='*60}
-[English Analysis]
-{'='*60}
-{english_analysis}
-
-{'='*60}
-[Korean Translation]
-{'='*60}
-{korean_result}"""
+    # Final rendered output — markdown for readability, no stream duplication
+    console.print()
+    console.print(Rule("English Analysis", style="blue"))
+    console.print(Markdown(english_analysis))
+    console.print(Rule("Korean Translation", style="blue"))
+    console.print(Markdown(korean_result))
+    return None
 
 
 def main():
@@ -261,27 +274,27 @@ def main():
 
     # Load models
     if mode == "analyst":
-        print("Loading analyst...", flush=True)
+        console.print("[dim]Loading analyst...[/]")
         global _analyst_model, _analyst_tokenizer, _analyst_cache
         _analyst_model, _analyst_tokenizer = load(ANALYST_ID)
         _analyst_cache = make_prompt_cache(_analyst_model)
     elif mode in ("qwen", "translate"):
-        print("Loading Qwen3-14B...", flush=True)
+        console.print("[dim]Loading Qwen3-14B...[/]")
         global _qwen_model, _qwen_tokenizer
         _qwen_model, _qwen_tokenizer = load(QWEN_ID)
     else:
         load_models()
 
     if query is None:
-        print(f"\nMLX Triple-Stage Pipeline (mode: {mode})")
-        print("  /help 로 사용법 확인\n")
+        console.print(f"\n[bold]MLX Triple-Stage Pipeline[/] [dim](mode: {mode})[/]")
+        console.print("  [dim]/help 로 사용법 확인[/]\n")
 
     while True:
         if query is None:
             try:
-                user_input = input("질문> ").strip()
+                user_input = console.input("[bold green]질문>[/] ").strip()
             except (EOFError, KeyboardInterrupt):
-                print("\n종료합니다.")
+                console.print("\n[dim]종료합니다.[/]")
                 break
             if not user_input or user_input in ("quit", "exit"):
                 break
@@ -289,20 +302,26 @@ def main():
                 reset_context()
                 continue
             if user_input == "/help":
-                print("""
-  사용법:
-    <질문>                한국어 질문 → 영어 분석 → 한국어 결과 (검색 자동 판별)
-    /search <질문>        웹 검색 강제 실행
-    /nosearch <질문>      웹 검색 건너뛰기
-    /reset                대화 컨텍스트 초기화
-    /help                 이 도움말 표시
-    quit / exit           종료
+                console.print(Markdown("""
+### 사용법
 
-  CLI 모드:
-    --analyst-only        GPT-OSS 영어 분석만
-    --qwen-only           Qwen 한국어 대화만
-    --translate-only      번역만 (분석 없이)
-""")
+| 입력 | 동작 |
+|------|------|
+| `<질문>` | 한국어 질문 → 영어 분석 → 한국어 결과 (검색 자동 판별) |
+| `/search <질문>` | 웹 검색 강제 실행 |
+| `/nosearch <질문>` | 웹 검색 건너뛰기 |
+| `/reset` | 대화 컨텍스트 초기화 |
+| `/help` | 이 도움말 표시 |
+| `quit` / `exit` | 종료 |
+
+### CLI 모드
+
+| 플래그 | 동작 |
+|--------|------|
+| `--analyst-only` | GPT-OSS 영어 분석만 |
+| `--qwen-only` | Qwen 한국어 대화만 |
+| `--translate-only` | 번역만 (분석 없이) |
+"""))
                 continue
         else:
             user_input = query
@@ -317,8 +336,10 @@ def main():
             user_input = user_input[10:]
 
         if mode == "analyst":
-            analyze(user_input)
-            print()
+            # Streaming raw tokens to stdout — already readable, just separate turns
+            analyze(user_input, stream=True)
+            console.print()
+            console.print(Rule(style="dim"))
         elif mode == "qwen":
             messages = [
                 {"role": "system", "content": "You are a helpful assistant. Always respond in Korean using Hangul only."},
@@ -329,15 +350,14 @@ def main():
                 enable_thinking=False,
             )
             _stream_qwen(_qwen_model, _qwen_tokenizer, prompt)
-            print()
+            console.print()
         elif mode == "translate":
             result, needs_search = translate(user_input, direction="ko2en")
             search_tag = "SEARCH:yes" if needs_search else "SEARCH:no"
-            print(f"\n{result}\n{search_tag}\n")
+            console.print(f"\n{result}\n[dim]{search_tag}[/]\n")
         else:
-            result = pipeline(user_input, force_search=force_search)
-            print(result)
-            print()
+            pipeline(user_input, force_search=force_search)
+            console.print()
 
         if query is not None:
             break
