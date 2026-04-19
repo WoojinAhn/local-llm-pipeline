@@ -106,7 +106,7 @@ Qwen3-14B 4-bit: 번역 품질과 한자 안전성의 최적 균형. GPT-OSS 120
 
 - macOS + Apple Silicon (M-series)
 - Python 3.10+
-- mlx-lm: `pip install mlx-lm`
+- Python 의존성: `mlx-lm`, `rich` (`pip install -r requirements.txt`)
 - 모델 (자동 다운로드 또는 수동):
   - GPT-OSS 120B: `mlx-community/gpt-oss-120b-4bit` (~65GB)
   - Qwen3-14B: `mlx-community/Qwen3-14B-4bit` (~7.7GB)
@@ -118,7 +118,7 @@ Qwen3-14B 4-bit: 번역 품질과 한자 안전성의 최적 균형. GPT-OSS 120
 
 ```bash
 # venv 설정 (최초 1회)
-python3 -m venv .venv && source .venv/bin/activate && pip install mlx-lm
+python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 
 # 웹 검색 API 키 설정 (선택)
 export BRAVE_API_KEY="your-brave-api-key"
@@ -290,7 +290,7 @@ Tested across 10 categories (daily, proverbs, technical docs, slang, business, n
 
 - macOS + Apple Silicon (M-series)
 - Python 3.10+
-- mlx-lm: `pip install mlx-lm`
+- Python dependencies: `mlx-lm`, `rich` (`pip install -r requirements.txt`)
 - Models (auto-downloaded or manual):
   - GPT-OSS 120B: `mlx-community/gpt-oss-120b-4bit` (~65GB)
   - Qwen3-14B: `mlx-community/Qwen3-14B-4bit` (~7.7GB)
@@ -302,7 +302,7 @@ Tested across 10 categories (daily, proverbs, technical docs, slang, business, n
 
 ```bash
 # Setup (once)
-python3 -m venv .venv && source .venv/bin/activate && pip install mlx-lm
+python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 
 # Web search API keys (optional)
 export BRAVE_API_KEY="your-brave-api-key"

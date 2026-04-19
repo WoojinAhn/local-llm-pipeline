@@ -18,6 +18,7 @@
 - 선택적 웹 검색: Qwen3-14B가 번역 시 검색 필요 여부 판별 (SEARCH:yes/no). 검색 필요 시 Brave Search (한국어) + Tavily (영어) 병렬 실행. 한국어 검색 결과는 Qwen으로 영어 번역 후 분석 컨텍스트에 주입 (분석 모델이 한국어를 네이티브로 처리하지 않으므로 우회).
 - 대화 컨텍스트 유지: mlx-lm `prompt_cache`로 분석 모델 대화 히스토리 누적 (KV 캐시 재사용, 이전 턴 재계산 없음). `/reset`으로 초기화.
 - 출력 필터링: GPT-OSS harmony 포맷의 `analysis` 채널은 숨기고 `final` 채널만 표시.
+- 출력 렌더링: Rich 라이브러리로 단계 표시(색상), 최종 분석/번역 결과(Markdown), 구분선(Rule) 렌더. `pipeline` 모드는 스피너+최종 Markdown, `--analyst-only` 모드는 스트리밍+Rule 구분.
 
 ### multimodal.py (Gemma 4 — mlx-vlm 직접 추론)
 
@@ -43,7 +44,7 @@
 
 ## Key Files
 
-- `mlx-pipeline.py`: 삼단 파이프라인. mlx-lm 직접 추론. `pip install mlx-lm` 필요.
+- `mlx-pipeline.py`: 삼단 파이프라인. mlx-lm 직접 추론. 의존성: `mlx-lm`, `rich` (`pip install -r requirements.txt`).
 - `multimodal.py`: Gemma 4 멀티모달 파이프라인. mlx-vlm 직접 추론. `pip install mlx-vlm` 필요.
 - `prompts.py`: 공유 프롬프트 모듈. 날짜 주입, 검색 판별/쿼리 생성, 인용 강제, thinking 필터 등.
 - `web_search.py`: 웹 검색 모듈. `brave_search()`, `tavily_search()`, `search_both()`, `format_search_context()` 제공.
@@ -58,7 +59,7 @@
 
 ## Development Guidelines
 
-- mlx-pipeline: `pip install mlx-lm` 필요 (venv 사용 권장)
+- mlx-pipeline: `pip install -r requirements.txt` (mlx-lm + rich, venv 사용 권장)
 - multimodal: `pip install mlx-vlm` 필요 (venv 사용 권장). Gemma 4 모델은 HuggingFace에서 다운로드 (HF 토큰 권장).
 - llm-pipeline: 외부 패키지 없이 Python stdlib만 사용
 - 모델 경로: LM Studio 캐시(`~/.lmstudio/models/`) 우선, HuggingFace 캐시(`~/.cache/huggingface/hub/`), HuggingFace ID 폴백
