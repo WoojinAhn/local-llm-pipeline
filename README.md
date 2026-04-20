@@ -72,14 +72,14 @@ flowchart TD
 초기에는 DeepSeek 분석 → Qwen 3 32B 번역의 이단 파이프라인이었으나, 세 가지 문제를 발견:
 
 - **모델 스왑**: LM Studio가 한 모델만 로딩 → ~10초 스왑 오버헤드
-- **한국어 입력**: 분석 모델이 mlx-lm에서 한국어 입력을 제대로 처리하지 못함
+- **한국어 입력**: 추론 모델이 mlx-lm에서 한국어 입력을 제대로 처리하지 못함
 - **한자 혼입 위험**: Qwen3 32B/27B도 중국어 혼입 가능성 존재 (Qwen3.5-27B에서 `扬长而去` 혼입 확인)
 
-해결: 작은 번역 전용 모델(Qwen3-14B, ~7.7GB)을 도입하여 분석 모델과 동시 로딩. 한국어 입력을 먼저 영어로 번역해서 분석 모델에 전달하고, 결과를 다시 한국어로 번역.
+해결: 작은 번역 전용 모델(Qwen3-14B, ~7.7GB)을 도입하여 추론 모델과 동시 로딩. 한국어 입력을 먼저 영어로 번역해서 추론 모델에 전달하고, 결과를 다시 한국어로 번역.
 
-**3-1. 분석 모델 교체 — DeepSeek R1 Distill 70B → GPT-OSS 120B**
+**3-1. 추론 모델 교체 — DeepSeek R1 Distill 70B → GPT-OSS 120B**
 
-초기 분석 모델이었던 DeepSeek R1 Distill Llama 70B 8-bit에서 GPT-OSS 120B 4-bit MLX로 교체. 얻은 것:
+초기 추론 모델이었던 DeepSeek R1 Distill Llama 70B 8-bit에서 GPT-OSS 120B 4-bit MLX로 교체. 얻은 것:
 
 - 메모리: 75GB → 65GB
 - 아키텍처: dense 70B → MoE (active 5.1B) — 추론 속도 개선
@@ -137,8 +137,8 @@ python3 mlx-pipeline.py
 # 웹 검색 건너뛰기
 # /nosearch 인공지능의 철학적 의미를 분석해줘
 
-# 분석 모델만 (영어 입출력)
-python3 mlx-pipeline.py --analyst-only "Analyze the impact of AI on labor markets"
+# 추론 모델만 (영어 입출력)
+python3 mlx-pipeline.py --reasoner-only "Analyze the impact of AI on labor markets"
 
 # Qwen만 (한국어 대화)
 python3 mlx-pipeline.py --qwen-only "오늘 할 일 정리해줘"
@@ -255,17 +255,17 @@ Initially installed Ollama, but it crashes on M5 Max due to a Metal backend issu
 
 **3. Triple-Stage Pipeline — Evolution from Dual**
 
-The initial dual pipeline (analyst → Qwen 32B translation) had three problems:
+The initial dual pipeline (reasoner → Qwen 32B translation) had three problems:
 
 - **Model swap**: LM Studio loads one model at a time → ~10s swap overhead
-- **Korean input**: the analyst model fails to handle Korean input natively under mlx-lm
+- **Korean input**: the reasoner model fails to handle Korean input natively under mlx-lm
 - **Character contamination risk**: Qwen 32B/27B can also leak Chinese characters (confirmed `扬长而去` in Qwen3.5-27B output)
 
-Solution: introduce a small translator model (Qwen3-14B, ~7.7GB) loaded alongside the analyst. Korean input is translated to English first, then analyzed, then translated back.
+Solution: introduce a small translator model (Qwen3-14B, ~7.7GB) loaded alongside the reasoner. Korean input is translated to English first, then analyzed, then translated back.
 
-**3-1. Analyst Swap — DeepSeek R1 Distill 70B → GPT-OSS 120B**
+**3-1. Reasoner Swap — DeepSeek R1 Distill 70B → GPT-OSS 120B**
 
-Replaced the original analyst (DeepSeek R1 Distill Llama 70B 8-bit) with GPT-OSS 120B 4-bit MLX. Gains:
+Replaced the original reasoner (DeepSeek R1 Distill Llama 70B 8-bit) with GPT-OSS 120B 4-bit MLX. Gains:
 
 - Memory: 75GB → 65GB
 - Architecture: dense 70B → MoE (5.1B active) — faster per-token inference
@@ -321,8 +321,8 @@ python3 mlx-pipeline.py
 # Skip web search
 # /nosearch Analyze the philosophical meaning of AI
 
-# Analyst only (English in/out)
-python3 mlx-pipeline.py --analyst-only "question"
+# Reasoner only (English in/out)
+python3 mlx-pipeline.py --reasoner-only "question"
 
 # Qwen only (Korean conversation)
 python3 mlx-pipeline.py --qwen-only "질문"

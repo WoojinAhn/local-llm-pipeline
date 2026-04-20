@@ -117,10 +117,10 @@ def filter_thinking_gemma(text):
 
 
 # ============================================================
-# mlx-pipeline specific — GPT-OSS analyst + Qwen translation
+# mlx-pipeline specific — GPT-OSS reasoner + Qwen translation
 # ============================================================
 
-ANALYST_SYSTEM = (
+REASONER_SYSTEM = (
     "You are an expert analyst. Respond ONLY in English. "
     "Provide thorough analysis with clear reasoning. "
     "Follow the user's requested format, length, and tone. "

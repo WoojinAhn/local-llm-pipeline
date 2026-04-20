@@ -2,14 +2,14 @@
 """
 Triple-stage MLX pipeline: translate → analyze → translate.
 
-Qwen3-14B (translator) and GPT-OSS 120B (analyst) are loaded
-simultaneously — no model swap needed. The analyst maintains
+Qwen3-14B (translator) and GPT-OSS 120B (reasoner) are loaded
+simultaneously — no model swap needed. The reasoner maintains
 conversation context across turns via mlx-lm prompt cache.
 
 Usage:
   python3 mlx-pipeline.py "한국어 질문"
   python3 mlx-pipeline.py                    # interactive mode
-  python3 mlx-pipeline.py --analyst-only     # GPT-OSS analysis (English in/out)
+  python3 mlx-pipeline.py --reasoner-only    # GPT-OSS analysis (English in/out)
   python3 mlx-pipeline.py --qwen-only        # Qwen conversation (Korean)
   python3 mlx-pipeline.py --translate-only   # Translation only (no analysis)
 """
@@ -29,7 +29,7 @@ from rich.markdown import Markdown
 from rich.rule import Rule
 
 from prompts import (
-    ANALYST_SYSTEM,
+    REASONER_SYSTEM,
     TRANSLATE_KO_TO_EN,
     TRANSLATE_EN_TO_KO,
     build_search_context_prompt,
@@ -49,8 +49,8 @@ def _info(msg):
 # --- Model paths (LM Studio cache first, HuggingFace fallback) ---
 _LMSTUDIO = os.path.expanduser("~/.lmstudio/models")
 
-_ANALYST_LOCAL = os.path.join(_LMSTUDIO, "mlx-community/gpt-oss-120b-4bit")
-ANALYST_ID = _ANALYST_LOCAL if os.path.isdir(_ANALYST_LOCAL) else "mlx-community/gpt-oss-120b-4bit"
+_REASONER_LOCAL = os.path.join(_LMSTUDIO, "mlx-community/gpt-oss-120b-4bit")
+REASONER_ID = _REASONER_LOCAL if os.path.isdir(_REASONER_LOCAL) else "mlx-community/gpt-oss-120b-4bit"
 
 QWEN_ID = "mlx-community/Qwen3-14B-4bit"
 
@@ -59,10 +59,10 @@ HARMONY_FINAL_MARKER = "<|channel|>final<|message|>"
 # System prompts imported from prompts.py
 
 # --- Models (loaded once at startup) ---
-_analyst_model = None
-_analyst_tokenizer = None
-_analyst_cache = None
-_analyst_history = []  # English conversation history for the analyst
+_reasoner_model = None
+_reasoner_tokenizer = None
+_reasoner_cache = None
+_reasoner_history = []  # English conversation history for the reasoner
 
 _qwen_model = None
 _qwen_tokenizer = None
@@ -70,14 +70,14 @@ _qwen_tokenizer = None
 
 def load_models():
     """Load both models into memory."""
-    global _analyst_model, _analyst_tokenizer, _analyst_cache
+    global _reasoner_model, _reasoner_tokenizer, _reasoner_cache
     global _qwen_model, _qwen_tokenizer
 
-    console.print(f"  [dim]Loading analyst ({ANALYST_ID})...[/]")
+    console.print(f"  [dim]Loading reasoner ({REASONER_ID})...[/]")
     start = time.time()
-    _analyst_model, _analyst_tokenizer = load(ANALYST_ID)
-    _analyst_cache = make_prompt_cache(_analyst_model)
-    console.print(f"  [green]Analyst loaded[/] [dim]in {time.time() - start:.1f}s[/]")
+    _reasoner_model, _reasoner_tokenizer = load(REASONER_ID)
+    _reasoner_cache = make_prompt_cache(_reasoner_model)
+    console.print(f"  [green]Reasoner loaded[/] [dim]in {time.time() - start:.1f}s[/]")
 
     console.print(f"  [dim]Loading Qwen3-14B ({QWEN_ID})...[/]")
     start = time.time()
@@ -99,9 +99,9 @@ def _stream_qwen(model, tokenizer, prompt, max_tokens=2000, stream=True):
     return "".join(parts).strip()
 
 
-def _stream_analyst(model, tokenizer, prompt, max_tokens=4000,
-                    stream=True, prompt_cache=None):
-    """Stream analyst (harmony-format) generation.
+def _stream_reasoner(model, tokenizer, prompt, max_tokens=4000,
+                     stream=True, prompt_cache=None):
+    """Stream reasoner (harmony-format) generation.
 
     Suppresses the analysis channel; streams only the final channel to stdout.
     Returns the filtered final-channel text.
@@ -164,34 +164,34 @@ def translate(text, direction="ko2en", stream=False):
 
 
 def analyze(text, stream=True):
-    """Analyze text using the GPT-OSS analyst with conversation context."""
-    global _analyst_history, _analyst_cache
+    """Analyze text using the GPT-OSS reasoner with conversation context."""
+    global _reasoner_history, _reasoner_cache
 
-    if not _analyst_history:
-        _analyst_history.append({"role": "system", "content": ANALYST_SYSTEM})
-    _analyst_history.append({"role": "user", "content": text})
+    if not _reasoner_history:
+        _reasoner_history.append({"role": "system", "content": REASONER_SYSTEM})
+    _reasoner_history.append({"role": "user", "content": text})
 
-    prompt = _analyst_tokenizer.apply_chat_template(
-        _analyst_history, add_generation_prompt=True, tokenize=False,
+    prompt = _reasoner_tokenizer.apply_chat_template(
+        _reasoner_history, add_generation_prompt=True, tokenize=False,
     )
 
-    result = _stream_analyst(
-        _analyst_model, _analyst_tokenizer, prompt,
+    result = _stream_reasoner(
+        _reasoner_model, _reasoner_tokenizer, prompt,
         max_tokens=4000, stream=stream,
-        prompt_cache=_analyst_cache,
+        prompt_cache=_reasoner_cache,
     )
 
-    _analyst_history.append({"role": "assistant", "content": result})
+    _reasoner_history.append({"role": "assistant", "content": result})
 
     return result
 
 
 def reset_context():
-    """Reset analyst conversation context."""
-    global _analyst_history, _analyst_cache
-    _analyst_history = []
-    if _analyst_model is not None:
-        _analyst_cache = make_prompt_cache(_analyst_model)
+    """Reset reasoner conversation context."""
+    global _reasoner_history, _reasoner_cache
+    _reasoner_history = []
+    if _reasoner_model is not None:
+        _reasoner_cache = make_prompt_cache(_reasoner_model)
     console.print("  [yellow]\\[Context reset][/]\n")
 
 
@@ -217,7 +217,7 @@ def pipeline(query, force_search=None):
         hit_count = len(ko_results) + len(en_results)
         _info(f"→ {hit_count} results found")
 
-        # Translate Korean snippets to English for the analyst
+        # Translate Korean snippets to English for the reasoner
         if ko_results:
             _info("→ Translating Korean results to English...")
             ko_snippets = "\n".join(
@@ -235,8 +235,8 @@ def pipeline(query, force_search=None):
         _stage(2, 4, "[dim]Search skipped[/]")
         console.print()
 
-    # Stage 3: Reasoner analysis — spinner during generation, markdown on finish
-    _stage(3, 4, "GPT-OSS analyzing...")
+    # Stage 3: Reasoner — spinner during generation, markdown on finish
+    _stage(3, 4, "GPT-OSS reasoning...")
     if search_context:
         analysis_prompt = build_search_context_prompt(search_context, english_query)
     else:
@@ -263,8 +263,8 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     flags = [a for a in sys.argv[1:] if a.startswith("--")]
 
-    if "--analyst-only" in flags:
-        mode = "analyst"
+    if "--reasoner-only" in flags:
+        mode = "reasoner"
     elif "--qwen-only" in flags:
         mode = "qwen"
     elif "--translate-only" in flags:
@@ -273,11 +273,11 @@ def main():
     query = " ".join(args) if args else None
 
     # Load models
-    if mode == "analyst":
-        console.print("[dim]Loading analyst...[/]")
-        global _analyst_model, _analyst_tokenizer, _analyst_cache
-        _analyst_model, _analyst_tokenizer = load(ANALYST_ID)
-        _analyst_cache = make_prompt_cache(_analyst_model)
+    if mode == "reasoner":
+        console.print("[dim]Loading reasoner...[/]")
+        global _reasoner_model, _reasoner_tokenizer, _reasoner_cache
+        _reasoner_model, _reasoner_tokenizer = load(REASONER_ID)
+        _reasoner_cache = make_prompt_cache(_reasoner_model)
     elif mode in ("qwen", "translate"):
         console.print("[dim]Loading Qwen3-14B...[/]")
         global _qwen_model, _qwen_tokenizer
@@ -318,7 +318,7 @@ def main():
 
 | 플래그 | 동작 |
 |--------|------|
-| `--analyst-only` | GPT-OSS 영어 분석만 |
+| `--reasoner-only` | GPT-OSS 영어 분석만 |
 | `--qwen-only` | Qwen 한국어 대화만 |
 | `--translate-only` | 번역만 (분석 없이) |
 """))
@@ -335,7 +335,7 @@ def main():
             force_search = False
             user_input = user_input[10:]
 
-        if mode == "analyst":
+        if mode == "reasoner":
             # Streaming raw tokens to stdout — already readable, just separate turns
             analyze(user_input, stream=True)
             console.print()
