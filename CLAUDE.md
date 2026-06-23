@@ -44,8 +44,8 @@
 
 ## Key Files
 
-- `mlx-pipeline.py`: 삼단 파이프라인. mlx-lm 직접 추론. 의존성: `mlx-lm`, `rich` (`pip install -r requirements.txt`).
-- `multimodal.py`: Gemma 4 멀티모달 파이프라인. mlx-vlm 직접 추론. `pip install mlx-vlm` 필요.
+- `mlx-pipeline.py`: 삼단 파이프라인. mlx-lm 직접 추론.
+- `multimodal.py`: Gemma 4 멀티모달 파이프라인. mlx-vlm 직접 추론.
 - `prompts.py`: 공유 프롬프트 모듈. 날짜 주입, 검색 판별/쿼리 생성, 인용 강제, thinking 필터 등.
 - `web_search.py`: 웹 검색 모듈. `brave_search()`, `tavily_search()`, `search_both()`, `format_search_context()` 제공.
 - `setup-flux.sh`: FLUX.2 CLI 빌드 스크립트. Metal Toolchain + Xcode 소스 빌드 + 바이너리 설치.
@@ -59,9 +59,9 @@
 
 ## Development Guidelines
 
-- mlx-pipeline: `pip install -r requirements.txt` (mlx-lm + rich, venv 사용 권장)
-- multimodal: `pip install mlx-vlm` 필요 (venv 사용 권장). Gemma 4 모델은 HuggingFace에서 다운로드 (HF 토큰 권장).
-- llm-pipeline: 외부 패키지 없이 Python stdlib만 사용
+- 의존성 설치: `pip install -r requirements.txt` (mlx-lm + mlx-vlm + rich, venv 사용 권장)
+- Gemma 4 모델은 HuggingFace에서 다운로드 (HF 토큰 권장)
+- llm-pipeline: 외부 패키지 없이 Python stdlib만 사용 (레거시)
 - 모델 경로: LM Studio 캐시(`~/.lmstudio/models/`) 우선, HuggingFace 캐시(`~/.cache/huggingface/hub/`), HuggingFace ID 폴백
 - GPT-OSS는 harmony 포맷 — `<|channel|>analysis<|message|>…<|end|>` 에 CoT를, `<|channel|>final<|message|>…` 에 최종 답변을 출력. `filter_thinking_harmony()` 로 `final` 채널만 추출
 - 시스템 프롬프트 수정: `prompts.py` 내 상수/함수 편집 (양쪽 파이프라인 공유)
@@ -72,11 +72,12 @@
 - Ollama M5 Max Metal 크래시 (ollama#14432): `brew install ollama`(소스 컴파일)에서만 발생. `brew install --cask ollama`(프리빌트 바이너리)로 설치하면 정상 동작.
 - GPT-OSS 120B MoE: active 5.1B이라 추론 속도는 빠르지만, 총 가중치 ~65GB + KV 캐시로 긴 컨텍스트 사용 시 128GB에서 메모리 압박 가능성 있음 (커뮤니티 보고 편차 있음).
 - Qwen 계열 한자 혼입 위험: Qwen3-14B 4-bit에서는 10건 테스트 결과 0건. 단, Qwen3.5-27B 4-bit에서는 중국어 성어 혼입 확인됨 — 모델 크기/양자화에 따라 달라질 수 있음.
+- Qwen3.6-27B (멀티모달 VLM, mlx-vlm)는 멀티모달 슬롯에서 Gemma 4 대체 후보로 평가했으나 미채택 (#34): 8-bit에서도 한자어 도메인(역사·기술용어)에서 한국어 단어 음절을 raw 한자로 치환 (예: 토지兼并, 民本主義). Gemma 4의 괄호 한자 주석(실학(實學))과 달리 한국어를 깨뜨림. 추가로 더 느리고(~15 vs ~23 tok/s) 더 큼(35 vs 19GB peak), 내부 추론도 영어. 텍스트부 아키텍처 `qwen3_5_text`는 mlx-lm 0.31.3 미지원이라 reasoner(mlx-lm) 슬롯에는 애초에 로드 불가.
 - GPT-OSS 120B는 한국어 네이티브가 아님 → 삼단 구조(Qwen 번역 래퍼) 유지 필요.
 - 추론 모델은 사실 기반 지식 질의에서 웹 검색 없이 가정법으로 답변하는 한계 있음 → 웹 검색 통합으로 해결.
 - 추론 모델에 한국어 검색 결과를 직접 주입하면 무시할 수 있음. 검색 결과가 한국어일 경우 반드시 영어로 번역 후 주입.
 - LM Studio CLI(`lms`)는 PATH에 자동 등록 안 됨. 전체 경로: `/Applications/LM Studio.app/Contents/Resources/app/.webpack/lms`
-- mlx-lm은 gemma4 아키텍처를 아직 미지원 (0.31.1 기준). Gemma 4 실행에는 mlx-vlm 필요.
+- mlx-lm 0.31.3에 gemma4 텍스트 모델 추가됨 (`gemma4_text`). 단 vision/audio 멀티모달은 미지원 — Gemma 4 멀티모달 실행에는 여전히 mlx-vlm 필요.
 - Gemma 4 모델 다운로드 시 HuggingFace 토큰 없으면 rate limit 발생. `HF_TOKEN` 환경변수 설정 권장.
 
 ## Improvement Ideas

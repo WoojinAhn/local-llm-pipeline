@@ -106,7 +106,7 @@ Qwen3-14B 4-bit: 번역 품질과 한자 안전성의 최적 균형. GPT-OSS 120
 
 - macOS + Apple Silicon (M-series)
 - Python 3.10+
-- Python 의존성: `mlx-lm`, `rich` (`pip install -r requirements.txt`)
+- Python 의존성: `mlx-lm`, `mlx-vlm`, `rich` (`pip install -r requirements.txt`)
 - 모델 (자동 다운로드 또는 수동):
   - GPT-OSS 120B: `mlx-community/gpt-oss-120b-4bit` (~65GB)
   - Qwen3-14B: `mlx-community/Qwen3-14B-4bit` (~7.7GB)
@@ -150,9 +150,6 @@ python3 mlx-pipeline.py --translate-only "번역할 문장"
 ### 멀티모달 파이프라인 (Gemma 4)
 
 ```bash
-# 설정 (최초 1회)
-pip install mlx-vlm
-
 # 멀티모달 인터랙티브 모드 (텍스트+이미지, 웹 검색 포함)
 python3 multimodal.py
 
@@ -290,7 +287,7 @@ Tested across 10 categories (daily, proverbs, technical docs, slang, business, n
 
 - macOS + Apple Silicon (M-series)
 - Python 3.10+
-- Python dependencies: `mlx-lm`, `rich` (`pip install -r requirements.txt`)
+- Python dependencies: `mlx-lm`, `mlx-vlm`, `rich` (`pip install -r requirements.txt`)
 - Models (auto-downloaded or manual):
   - GPT-OSS 120B: `mlx-community/gpt-oss-120b-4bit` (~65GB)
   - Qwen3-14B: `mlx-community/Qwen3-14B-4bit` (~7.7GB)
@@ -334,9 +331,6 @@ python3 mlx-pipeline.py --translate-only "text to translate"
 ### Multimodal Pipeline (Gemma 4)
 
 ```bash
-# Setup (once)
-pip install mlx-vlm
-
 # Multimodal interactive mode (text+image, web search included)
 python3 multimodal.py
 
