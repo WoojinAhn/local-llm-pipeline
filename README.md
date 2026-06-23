@@ -24,7 +24,7 @@ MacBook Pro M5 Max (128GB)에서 로컬 LLM 파이프라인.
 | 메모리 | 128GB Unified Memory |
 | 스토리지 | 4TB SSD |
 | 메모리 대역폭 | 614 GB/s |
-| OS | macOS 15 (Sequoia) |
+| OS | macOS 26.5.1 |
 
 ### 구조
 
@@ -110,6 +110,8 @@ Qwen3-14B 4-bit: 번역 품질과 한자 안전성의 최적 균형. GPT-OSS 120
 - 모델 (자동 다운로드 또는 수동):
   - GPT-OSS 120B: `mlx-community/gpt-oss-120b-4bit` (~65GB)
   - Qwen3-14B: `mlx-community/Qwen3-14B-4bit` (~7.7GB)
+  - Gemma 4 31B (멀티모달): `mlx-community/gemma-4-31b-it-4bit` (~17GB)
+- HuggingFace 토큰 (권장): `HF_TOKEN` — gated 모델 접근 및 다운로드 rate limit 회피
 - 웹 검색 API 키 (선택 — 미설정 시 검색 단계 건너뜀):
   - `BRAVE_API_KEY`: [Brave Search API](https://brave.com/search/api/)
   - `TAVILY_API_KEY`: [Tavily API](https://tavily.com/)
@@ -170,6 +172,14 @@ python3 multimodal.py --no-search "이 주장을 분석해줘"
 - `/reset` — 대화 컨텍스트 초기화
 - `/quit` — 종료
 
+### 이미지 생성 (FLUX.2, 선택)
+
+텍스트→이미지 / 이미지→이미지 생성. MLX 네이티브 Swift 구현(`flux-2-swift-mlx`)으로, `setup-flux.sh`를 통한 Xcode 소스 빌드가 필요합니다 (프리빌트 바이너리는 metallib 누락 이슈). Gemma 4(~17GB) + FLUX.2-dev int4(~32GB) 동시 실행 가능. FLUX.2-dev는 HuggingFace gated 모델이라 `HF_TOKEN` + 접근 승인 필요.
+
+```bash
+./setup-flux.sh   # Xcode 소스 빌드 + 바이너리 설치
+```
+
 ### 제한 사항
 
 - GPT-OSS 120B의 harmony `analysis` 채널로 reasoning 시간이 소요됨 — 복잡한 질문일수록 응답 지연
@@ -209,7 +219,7 @@ Local LLM pipelines on MacBook Pro M5 Max (128GB).
 | Memory | 128GB Unified Memory |
 | Storage | 4TB SSD |
 | Memory Bandwidth | 614 GB/s |
-| OS | macOS 15 (Sequoia) |
+| OS | macOS 26.5.1 |
 
 ### Architecture
 
@@ -240,6 +250,8 @@ flowchart TD
 Initially installed Ollama, but it crashes on M5 Max due to a Metal backend issue ([ollama#14432](https://github.com/ollama/ollama/issues/14432)). Switched to LM Studio's MLX backend, then to direct mlx-lm usage for simultaneous multi-model loading (LM Studio limited to one model at a time). (Note: The Ollama Metal crash only occurs with `brew install ollama` (source build). Installing via `brew install --cask ollama` (pre-built binary) works correctly.)
 
 **2. Model Selection — Analysis**
+
+Comparing analysis-capable models that fit in 128GB:
 
 | Model | Quant | Memory | Analysis | Korean | Decision |
 |-------|-------|--------|----------|--------|----------|
@@ -291,6 +303,8 @@ Tested across 10 categories (daily, proverbs, technical docs, slang, business, n
 - Models (auto-downloaded or manual):
   - GPT-OSS 120B: `mlx-community/gpt-oss-120b-4bit` (~65GB)
   - Qwen3-14B: `mlx-community/Qwen3-14B-4bit` (~7.7GB)
+  - Gemma 4 31B (multimodal): `mlx-community/gemma-4-31b-it-4bit` (~17GB)
+- HuggingFace token (recommended): `HF_TOKEN` — gated-model access and to avoid download rate limits
 - Web search API keys (optional — search step skipped gracefully if missing):
   - `BRAVE_API_KEY`: [Brave Search API](https://brave.com/search/api/)
   - `TAVILY_API_KEY`: [Tavily API](https://tavily.com/)
@@ -350,6 +364,14 @@ Interactive commands:
 - `/search` — toggle web search on/off
 - `/reset` — reset conversation context
 - `/quit` — exit
+
+### Image Generation (FLUX.2, optional)
+
+Text-to-image / image-to-image generation via a native MLX Swift implementation (`flux-2-swift-mlx`). Requires an Xcode source build through `setup-flux.sh` (the prebuilt binary has a missing-metallib issue). Gemma 4 (~17GB) + FLUX.2-dev int4 (~32GB) can run concurrently. FLUX.2-dev is a HuggingFace gated model — needs `HF_TOKEN` + access approval.
+
+```bash
+./setup-flux.sh   # Xcode source build + binary install
+```
 
 ### Limitations
 
