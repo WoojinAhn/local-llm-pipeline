@@ -7,3 +7,5 @@ outputs/
 *.profraw
 .env
 docs/superpowers/
+scripts/
+.playwright-mcp/
