@@ -97,5 +97,6 @@ No test suite. Verify changes by running the relevant pipeline and inspecting ou
 ## Backlog (tracked as issues)
 
 - Speculative decoding for the GPT-OSS reasoner (gpt-oss-20b draft) — #35.
+- KV cache quantization (`kv_bits`) for GPT-OSS long-session memory pressure — #39.
 - Hunyuan-MT 7B (WMT25 #1) as a translation-stage upgrade candidate.
 - Result-to-file save option; streaming translation output; Textual TUI — #8.
