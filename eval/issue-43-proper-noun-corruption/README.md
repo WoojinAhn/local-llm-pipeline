@@ -75,10 +75,26 @@ Generation is greedy (mlx-lm's default `temp=0`), so runs are reproducible witho
 seed. `run.py` records library versions, platform, and per-stage timing, token counts
 and peak memory.
 
-For provenance it records `repo_commit` **plus** `repo_dirty`, `dirty_paths`,
-`harness_sha256_16` and `prompts_sha256_16`. `repo_commit` alone is misleading: a run
-made while the harness was uncommitted records the *previous* HEAD, which does not
-identify the code that produced it. Check `repo_dirty` before trusting `repo_commit`.
+For provenance it records `repo_commit` plus the fields below. `repo_commit` alone is
+misleading: a run made while the harness was uncommitted records the *previous* HEAD,
+which does not identify the code that produced it.
+
+| Field | Meaning |
+|---|---|
+| `source_dirty`, `source_dirty_paths` | Uncommitted changes **excluding** `eval/*/outputs/**`. This is the field that bears on reproducibility — check it before trusting `repo_commit`. |
+| `repo_dirty`, `dirty_paths` | Whole-tree state, original meaning, kept so records written before the split stay readable. |
+| `generation_sha256_16` | Hash of `run.py` + `cases.jsonl` — what produced the raw results. |
+| `scoring_sha256_16` | Hash of `score.py`. Deliberately separate: a scorer edit must not invalidate valid raw generations. |
+
+A sequential sweep writes results between configurations, so every run after the first
+saw the tree dirtied by its own earlier output and recorded `repo_dirty=true` with no
+source change. `source_dirty` excludes expected generated artifacts; anything else — a
+touched `run.py`, `cases.jsonl`, `prompts.py`, pipeline source — still counts.
+
+Records written before this split (`outputs/*/run-search-off-candidate.json` from
+2026-08-07) carry only `repo_dirty`. Two of the three read `true` for exactly this
+reason; their `dirty_paths` show only sibling `outputs/**` files. They are not
+retroactively rewritten.
 
 Long runs save after every case (atomic replace) and support `--resume`, so an
 interrupted multi-hour run is not lost. `--resume` refuses to append when

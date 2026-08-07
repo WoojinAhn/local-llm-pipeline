@@ -82,6 +82,18 @@ def extract_people(text):
     return {c for c in cands if plausible_name(c)}
 
 
+def _dirty_label(env):
+    """Never relabel a legacy whole-tree value as source-scoped.
+
+    Records written before the source/whole-tree split carry only `repo_dirty`, which
+    counts generated outputs/** as dirt. Printing that as `source_dirty` would restate
+    the exact false positive the split removed.
+    """
+    if "source_dirty" in env:
+        return f"source_dirty={env['source_dirty']}"
+    return f"repo_dirty(legacy, counts outputs/)={env.get('repo_dirty')}"
+
+
 def load_annotations():
     path = f"{HERE}/annotations.jsonl"
     ann = {}
@@ -161,7 +173,7 @@ def main():
               f"[search={env.get('search')} profile={env.get('profile')}"
               f"{' PRODUCTION-EQUIVALENT' if env.get('production_equivalent') else ''}] "
               f"gen={env.get('generation_sha256_16') or env.get('harness_sha256_16')} "
-              f"dirty={env.get('repo_dirty')} =====")
+              f"{_dirty_label(env)} =====")
         if not s["complete"]:
             print("  *** INCOMPLETE RUN — SCORES BELOW ARE NOT COMPARABLE ***")
             if s["missing_cases"]:

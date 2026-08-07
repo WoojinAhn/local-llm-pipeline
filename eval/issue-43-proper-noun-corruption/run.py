@@ -79,6 +79,11 @@ def has_unterminated_think(text):
 GENERATION_FILES = ("run.py", "cases.jsonl")
 SCORING_FILES = ("score.py",)
 
+# Paths a run is expected to write. A sequential sweep dirties the tree with its own
+# earlier results, which made every config after the first record repo_dirty=true even
+# though no source had changed. Only these are excluded; anything else still counts.
+GENERATED_RE = re.compile(r"^eval/[^/]+/outputs/")
+
 
 def _hash(files):
     h = hashlib.sha256()
@@ -102,7 +107,22 @@ def env_metadata(search, profile, name):
         except Exception:
             return None
 
-    dirty = git("status", "--porcelain")
+    # NOT via git(): that helper strips the whole output, eating the leading status
+    # column of a modified-tracked line (" M path"), which shifted every such path by
+    # one character. Untracked lines ("?? path") have no leading space, so the defect
+    # only ever showed on the source changes that matter most.
+    def git_raw(*args):
+        try:
+            return subprocess.check_output(["git", "-C", ROOT, *args], text=True)
+        except Exception:
+            return ""
+
+    dirty = git_raw("status", "--porcelain")
+    # Porcelain v1: 2 status columns + a space, then the path. Renames read "old -> new";
+    # take the destination, which is the path that actually differs.
+    all_paths = [l[3:].split(" -> ")[-1].strip('"')
+                 for l in dirty.splitlines() if len(l) > 3]
+    source_paths = [p for p in all_paths if not GENERATED_RE.match(p)]
     return dict(
         timestamp=datetime.now(timezone.utc).isoformat(),
         search=search,
@@ -117,8 +137,12 @@ def env_metadata(search, profile, name):
         config_matches_shipped=(name == "three-stage-gpt-oss"),
         reproduces_conversation_state=False,
         repo_commit=git("rev-parse", "HEAD"),
-        repo_dirty=bool(dirty),
-        dirty_paths=[l[3:] for l in dirty.splitlines()] if dirty else [],
+        # `source_dirty` is the one that bears on reproducibility. `repo_dirty` keeps its
+        # original whole-tree meaning so records written before this split stay readable.
+        source_dirty=bool(source_paths),
+        source_dirty_paths=source_paths,
+        repo_dirty=bool(all_paths),
+        dirty_paths=all_paths,
         generation_sha256_16=_hash(GENERATION_FILES),
         scoring_sha256_16=_hash(SCORING_FILES),
         prompts_sha256_16=hashlib.sha256(
