@@ -201,6 +201,61 @@ control/parity split, and its `repo_commit` points at the pre-harness HEAD.
 The v1 records are kept at `outputs/*/v1-final-only.json`. They lack per-stage
 intermediates and cannot support stage-level analysis.
 
+### v3 (`search-off-production`) — shipped token limits
+
+Same harness and case set as v2, with `--profile production` (translate 2000 / reason
+4000, the limits `mlx-pipeline.py` uses). Denominator 42 canonical entities over 6
+Korea-domain cases; both configurations completed all 9 non-holdout cases with
+`source_dirty=false`, generation hash `f0fad4af3d93f000`.
+
+| Configuration | Recall | Miss rate | Avg latency (Korea) |
+|---|---|---|---|
+| `three-stage-gpt-oss` | 15/42 (35.7%) | 27/42 (64.3%) | 79.5 s |
+| `three-stage-qwen36` | 9/42 (21.4%) | 33/42 (78.6%) | 68.1 s |
+
+### Candidate vs production, same configurations
+
+| Configuration | Profile | Recall | Avg latency (Korea) |
+|---|---|---|---|
+| `three-stage-gpt-oss` | candidate (4000/8000) | 16/42 (38.1%) | 114.2 s |
+| `three-stage-gpt-oss` | **production (2000/4000)** | **15/42 (35.7%)** | **79.5 s** |
+| `three-stage-qwen36` | candidate (4000/8000) | 9/42 (21.4%) | 76.0 s |
+| `three-stage-qwen36` | **production (2000/4000)** | **9/42 (21.4%)** | **68.1 s** |
+
+The shipped limits cost gpt-oss one canonical entity and save 35 s per Korea query.
+Qwen3.6 is unchanged at 9/42 — the extra budget in the candidate profile did not buy it
+any additional Korean proper nouns.
+
+**These runs are `search=off`, so they are neither settings-equivalent nor
+conversation-state-equivalent to production.** Only the generation profile matches; the
+metadata records `settings_equivalent_to_production=false` for both, because settings
+equivalence additionally requires `--search parity`. And
+`reproduces_conversation_state` is `false` here as everywhere in this harness: production
+accumulates `_reasoner_history` and reuses `prompt_cache` across turns, while every case
+here runs cold. Read this as a token-budget comparison holding the reasoner axis fixed,
+nothing more.
+
+### Reasoner truncation at the shipped 4000-token limit
+
+Evidence taken from the raw `stages.reason` records, not from the `unterminated_think`
+flag — see the caveat below.
+
+| Configuration | Reason stage at the 4000 cap | Reasoning block left unclosed |
+|---|---|---|
+| `three-stage-gpt-oss` | 1/9 (`ctl-03`) | 0/9 — `<\|channel\|>final` present in all 9 |
+| `three-stage-qwen36` | 4/9 (`ko-03`, `ko-04`, `ko-06`, `ctl-03`) | **1/9 (`ko-03`)** — no `</think>` |
+
+On `ko-03` (임진왜란) Qwen3.6 spent the whole 4000-token budget reasoning and never
+emitted an answer, so what reached back-translation was raw reasoning presented as
+analysis. That case scored 1/6.
+
+**Caveat — `unterminated_think` reports 0/9 for both and is unreliable for Qwen3.6.**
+`has_unterminated_think()` requires a literal `<think>` in the completion, but Qwen3.6's
+chat template opens the block in the *prompt*, so the completion contains only the
+closing tag. The flag can therefore never fire for this model. The numbers above come
+from checking `</think>` presence and token counts directly. Fixing the detector is out
+of scope for this commit.
+
 `outputs/english-reasoner-ab.json` holds a separate English analytical A/B across
 gpt-oss-120b, Qwen3.6-35B-A3B and EXAONE-4.0-32B, used to decide whether EXAONE could
 serve as a general reasoner (it could not: 110 s/task vs 27 s).
