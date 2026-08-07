@@ -5,7 +5,10 @@ direct path, and that the effect is reasoner-independent (two reasoners score al
 They do NOT show which of three steps causes it. These three experiments separate them.
 
   A. roundtrip   — names only, KO -> EN -> KO. Isolates the translator pair with no
-                   reasoner involved. Survival here means translation is not the locus.
+                   reasoner involved. NOTE: survival of a bare name list does NOT
+                   clear the translator. Names in running prose carry different
+                   context, attention and segmentation than a newline-separated
+                   list; this is a necessary condition, not a sufficient one.
   B. back-only   — correct English names fed straight to EN -> KO. Isolates
                    back-translation from any upstream degradation.
   C. reasoner    — one fixed English question to both reasoners. Isolates whether the
@@ -16,7 +19,7 @@ Usage:
     python isolate.py b
     python isolate.py c
 """
-import json, os, sys, time
+import json, os, re, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -24,6 +27,13 @@ sys.path.insert(0, ROOT)
 
 from mlx_lm import load, generate
 import prompts
+
+THINK_SPLIT = re.compile(r"</think>|<\|channel\|>final<\|message\|>|assistantfinal")
+
+
+def unterminated(text):
+    return ("<think>" in text or "<|channel|>analysis" in text) and not THINK_SPLIT.search(text)
+
 
 TRANSLATOR = "mlx-community/Qwen3-14B-4bit"
 REASONERS = ["mlx-community/gpt-oss-120b-4bit", "mlx-community/Qwen3.6-35B-A3B-4bit"]
@@ -44,26 +54,24 @@ REASONER_Q = ("List the major scholars of the Korean Silhak movement of the late
               "romanized.")
 
 
-def call(model, tok, system, user, max_tokens=1500, thinking=None):
+def call(model, tok, system, user, max_tokens=8000, thinking=None):
     msgs = ([{"role": "system", "content": system}] if system else []) + \
            [{"role": "user", "content": user}]
     kw = {} if thinking is None else {"enable_thinking": thinking}
     p = tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, **kw)
     t0 = time.time()
     raw = generate(model, tok, p, max_tokens=max_tokens, verbose=False)
-    import re
-    text = re.split(r"</think>|<\|channel\|>final<\|message\|>|assistantfinal", raw)[-1]
-    return text.strip(), round(time.time() - t0, 2)
+    text = THINK_SPLIT.split(raw)[-1]
+    return text.strip(), round(time.time() - t0, 2), raw
 
 
 def exp_a():
     """Names only, KO -> EN -> KO. No reasoner in the loop."""
     m, t = load(TRANSLATOR)
     ko_list = "\n".join(n for n, _ in NAMES)
-    en, _ = call(m, t, prompts.TRANSLATE_KO_TO_EN, ko_list, thinking=False)
-    import re
+    en, _, _ = call(m, t, prompts.TRANSLATE_KO_TO_EN, ko_list, thinking=False)
     en = re.sub(r"SEARCH:\s*(yes|no)", "", en).strip()
-    back, _ = call(m, t, prompts.TRANSLATE_EN_TO_KO, en, thinking=False)
+    back, _, _ = call(m, t, prompts.TRANSLATE_EN_TO_KO, en, thinking=False)
     survived = [ko for ko, _ in NAMES if ko in back]
     return dict(experiment="A roundtrip", input=ko_list, intermediate_en=en, output=back,
                 survived=survived, survival=f"{len(survived)}/{len(NAMES)}")
@@ -73,7 +81,7 @@ def exp_b():
     """Correct English names -> KO only. Back-translation in isolation."""
     m, t = load(TRANSLATOR)
     en_list = "\n".join(en for _, en in NAMES)
-    back, _ = call(m, t, prompts.TRANSLATE_EN_TO_KO, en_list, thinking=False)
+    back, _, _ = call(m, t, prompts.TRANSLATE_EN_TO_KO, en_list, thinking=False)
     survived = [ko for ko, _ in NAMES if ko in back]
     return dict(experiment="B back-only", input=en_list, output=back,
                 survived=survived, survival=f"{len(survived)}/{len(NAMES)}")
@@ -85,8 +93,9 @@ def exp_c():
     for repo in REASONERS:
         m, t = load(repo)
         think = True if "Qwen3.6" in repo else None
-        text, secs = call(m, t, prompts.REASONER_SYSTEM, REASONER_Q, 2500, thinking=think)
-        out[repo] = dict(answer=text, secs=secs)
+        text, secs, raw = call(m, t, prompts.REASONER_SYSTEM, REASONER_Q, 8000, thinking=think)
+        out[repo] = dict(answer=text, secs=secs, raw=raw,
+                         unterminated_think=unterminated(raw))
         del m
     return dict(experiment="C reasoner", question=REASONER_Q, outputs=out)
 

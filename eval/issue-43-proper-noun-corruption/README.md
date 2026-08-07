@@ -50,51 +50,103 @@ described as "4x less corruption", which the data does not support.
 ## Running
 
 ```bash
-python eval/issue-43-proper-noun-corruption/run.py three-stage-gpt-oss
-python eval/issue-43-proper-noun-corruption/run.py three-stage-qwen36
-python eval/issue-43-proper-noun-corruption/run.py single-exaone
-python eval/issue-43-proper-noun-corruption/score.py
+cd eval/issue-43-proper-noun-corruption
+python run.py three-stage-gpt-oss              # control mode (no search)
+python run.py three-stage-qwen36 --mode parity # mirrors production, incl. search
+python run.py single-exaone --resume           # continue an interrupted run
+python score.py
 
 # entities needing a verdict
-python eval/issue-43-proper-noun-corruption/score.py --candidates three-stage-gpt-oss \
-  >> eval/issue-43-proper-noun-corruption/annotations.jsonl
+python score.py --candidates three-stage-gpt-oss >> annotations.jsonl
 ```
 
 Generation is greedy (mlx-lm's default `temp=0`), so runs are reproducible without a
-seed. `run.py` records library versions, repo commit, platform, and per-stage timing,
-token counts and peak memory.
+seed. `run.py` records library versions, platform, and per-stage timing, token counts
+and peak memory.
+
+For provenance it records `repo_commit` **plus** `repo_dirty`, `dirty_paths`,
+`harness_sha256_16` and `prompts_sha256_16`. `repo_commit` alone is misleading: a run
+made while the harness was uncommitted records the *previous* HEAD, which does not
+identify the code that produced it. Check `repo_dirty` before trusting `repo_commit`.
+
+Long runs save after every case (atomic replace) and support `--resume`, so an
+interrupted multi-hour run is not lost.
 
 ## Isolating the damage stage — still open
 
 Observational runs establish the defect is **reasoner-independent**: two different
-reasoners score identically (4/43) while the wrapper-free path scores 16/43. They do
-**not** establish which step loses the entities. "Reasoner-independent" and "not the
+reasoners scored identically while the wrapper-free path scored roughly 4x higher (v1
+figures — see the comparability caveats below). They do **not** establish which step
+loses the entities. "Reasoner-independent" and "not the
 reasoner" are different claims — any reasoner handed romanized Korean names may
 confabulate.
 
 `isolate.py` separates the three candidates:
 
 ```bash
-python eval/issue-43-proper-noun-corruption/isolate.py a   # KO -> EN -> KO, names only
-python eval/issue-43-proper-noun-corruption/isolate.py b   # correct English -> KO only
-python eval/issue-43-proper-noun-corruption/isolate.py c   # fixed English Q, both reasoners
+python isolate.py a   # KO -> EN -> KO, names only
+python isolate.py b   # correct English -> KO only
+python isolate.py c   # fixed English Q, both reasoners
 ```
 
 Not yet run.
 
-## Baseline results (2026-08-06, v1 harness — final answers only)
+Experiment A is a **necessary, not sufficient** check on the translator: names surviving
+a newline-separated list does not clear translation, because names in running prose carry
+different context and segmentation.
 
-Canonical recall over 6 Korea-domain cases, 43 canonical entities:
+## Run modes
 
-| Configuration | Recall | Avg latency |
+`control` (default) disables web search — the `SEARCH:` judgment is recorded but not
+acted on. Reproducible, and corruption is attributable to the pipeline rather than to
+whatever the web returned. **This is not what production does.**
+
+`parity` mirrors `mlx-pipeline.py:pipeline()`: search runs when the judge says yes,
+Korean snippets are translated to English, and `build_search_context_prompt()` wraps the
+reasoner input. Results vary by run, network and API keys.
+
+Never compare a `control` number against a `parity` number.
+
+## Baseline results — v1 and v2 are NOT directly comparable
+
+Do not put these in one table and read a trend off it. Three things changed.
+
+**Denominator.** `ko-03`'s canonical list went from 7 entries to 6: `元均` was a
+hanja duplicate of `원균` (a mistake), and `와키자카` is a Japanese commander, out of
+scope for a Korean-proper-noun eval. `황진` was added. Total 43 → 42.
+
+**Reasoner budget.** v1 used `max_tokens=1600`, which truncated Qwen3.6 mid-reasoning.
+v2 uses 8000. This changed latency by ~2.8x, so v1 latencies measure truncation, not
+throughput.
+
+**Recall method.** v1 derived recall from the general extractor, whose plain-text
+pattern is fixed at 3 syllables. Two-syllable names (`이익`, `원균`, `권율`, `일연`,
+`고종`) were counted only when a model happened to bold them, so v1 recall is
+formatting-dependent and understated. v2 matches canonical entities directly.
+
+### v1 (2026-08-06, final answers only, 1600-token reasoner, extractor-derived recall)
+
+| Configuration | Recall /43 | Avg latency |
 |---|---|---|
-| `single-exaone` | 16/43 | 60.5 s |
-| `three-stage-gpt-oss` | 4/43 | 42.5 s |
-| `three-stage-qwen36` | 4/43 | 25.6 s |
+| `single-exaone` | 16 | 60.5 s |
+| `three-stage-gpt-oss` | 4 | 42.5 s |
+| `three-stage-qwen36` | 4 | 25.6 s |
 
-`outputs/*/v1-final-only.json` are those original records. They lack per-stage
-intermediates — `run.py` in this directory supersedes the script that produced them and
-captures stages. Re-run before relying on stage-level analysis.
+### v2 (this harness, control mode, 8000-token reasoner, direct canonical matching)
+
+| Configuration | Recall /42 | Avg latency |
+|---|---|---|
+| `three-stage-qwen36` | not yet run | — |
+| `three-stage-gpt-oss` | not yet run | — |
+| `single-exaone` | not yet run | — |
+
+An earlier v2 attempt is kept at `outputs/three-stage-qwen36/v2pre-superseded.json`
+(recall 10/42, 70.9 s avg). **Superseded, do not cite.** It truncated the reasoner
+output at 6000 characters before back-translation — production does not — predates the
+control/parity split, and its `repo_commit` points at the pre-harness HEAD.
+
+The v1 records are kept at `outputs/*/v1-final-only.json`. They lack per-stage
+intermediates and cannot support stage-level analysis.
 
 `outputs/english-reasoner-ab.json` holds a separate English analytical A/B across
 gpt-oss-120b, Qwen3.6-35B-A3B and EXAONE-4.0-32B, used to decide whether EXAONE could

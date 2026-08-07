@@ -46,10 +46,28 @@ def plausible_name(tok):
             and tok[-1] not in ENDINGS and tok[0] in SURNAMES)
 
 
-def extract_people(text):
-    """Recall-oriented extractor. Deliberately imprecise — see module docstring.
+def find_canonical(text, canon):
+    """Recall: match each expected entity directly, with Hangul boundaries.
 
-    Output is a candidate set for annotation, not a set of asserted person names.
+    Must NOT go through extract_people(). That extractor's PLAIN pattern is
+    fixed at 3 syllables, so plain-text 2-syllable names (이익, 원균, 권율,
+    일연, 고종) were only ever counted when the model happened to bold them.
+    That made recall depend on formatting and silently understated every
+    configuration.
+
+    Boundary lookarounds also do the discrimination that matters here: 이익
+    matches 이익, but not 이익환 — which is one of the fabrications this eval
+    exists to catch.
+    """
+    return {e for e in canon
+            if re.search(rf"(?<![가-힣]){re.escape(e)}(?![가-힣])", text)}
+
+
+def extract_people(text):
+    """Candidate extractor for the *outside-canonical* set only.
+
+    Deliberately imprecise and formatting-dependent — its output feeds human
+    annotation, never a recall figure. See module docstring.
     """
     cands = set(BOLD.findall(text)) | set(GLOSS.findall(text)) | set(PLAIN.findall(text))
     return {c for c in cands if plausible_name(c)}
@@ -66,8 +84,9 @@ def load_annotations():
     return ann
 
 
-def score_config(name, cases, ann):
-    run = json.load(open(f"{HERE}/outputs/{name}/run.json"))
+def score_config(name, cases, ann, mode="control"):
+    path = f"{HERE}/outputs/{name}/run-{mode}.json"
+    run = json.load(open(path))
     by_id = {c["id"]: c for c in cases}
     tp = fn = 0
     validity = Counter()
@@ -77,10 +96,9 @@ def score_config(name, cases, ann):
         if c["domain"] != "korea":
             continue
         canon = set(c["canonical_people"])
-        found = extract_people(r["final"])
-        hit = found & canon
+        hit = find_canonical(r["final"], canon)
         tp += len(hit); fn += len(canon - hit)
-        outside = sorted(found - canon)
+        outside = sorted(extract_people(r["final"]) - canon)
         verdicts = Counter(ann.get((r["id"], e), "unreviewed") for e in outside)
         validity.update(verdicts)
         validity["valid"] += len(hit)  # canonical hits are valid by construction
@@ -98,7 +116,8 @@ def main():
 
     if "--candidates" in sys.argv:
         name = sys.argv[sys.argv.index("--candidates") + 1]
-        s = score_config(name, cases, ann)
+        mode = sys.argv[sys.argv.index("--mode") + 1] if "--mode" in sys.argv else "control"
+        s = score_config(name, cases, ann, mode)
         for pc in s["per_case"]:
             for e in pc["outside"]:
                 if (pc["id"], e) not in ann:
@@ -106,11 +125,19 @@ def main():
                                           note=""), ensure_ascii=False))
         return
 
+    mode = sys.argv[sys.argv.index("--mode") + 1] if "--mode" in sys.argv else "control"
     configs = [d for d in sorted(os.listdir(f"{HERE}/outputs"))
-               if os.path.exists(f"{HERE}/outputs/{d}/run.json")]
+               if os.path.isdir(f"{HERE}/outputs/{d}")
+               and os.path.exists(f"{HERE}/outputs/{d}/run-{mode}.json")]
+    if not configs:
+        print(f"no run-{mode}.json found under outputs/ — run run.py first")
+        return
     for name in configs:
-        s = score_config(name, cases, ann)
-        print(f"\n===== {s['config']} =====")
+        s = score_config(name, cases, ann, mode)
+        env = json.load(open(f"{HERE}/outputs/{name}/run-{mode}.json"))["env"]
+        print(f"\n===== {s['config']} [{env['mode']}] "
+              f"harness={env.get('harness_sha256_16')} "
+              f"dirty={env.get('repo_dirty')} =====")
         print(f"  canonical recall : {s['recall_tp']}/{s['recall_tp'] + s['recall_fn']}"
               f"  ({s['recall']})")
         print(f"  entity validity  : {s['validity']}")
