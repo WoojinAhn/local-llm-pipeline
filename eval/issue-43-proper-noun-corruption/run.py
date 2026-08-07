@@ -4,25 +4,33 @@ Unlike the throwaway harness this replaces, per-stage intermediates are recorded
 the corruption can be localized to KO->EN translation, the reasoner, or EN->KO
 back-translation rather than only observed end-to-end.
 
-Two modes, because they answer different questions and must not be mixed:
+Two independent axes. Neither name claims full production parity — see below.
 
-  control  (default) — web search disabled. The `SEARCH:` judgment is recorded but not
-                       acted on. Deterministic and reproducible; corruption is
-                       attributable to the pipeline rather than to whatever the web
-                       returned that day. This is NOT what production does.
+--search  off      (default) web search disabled. The `SEARCH:` judgment is recorded but
+                   not acted on. Deterministic; corruption is attributable to the
+                   pipeline rather than to whatever the web returned that day.
+          parity   the *search behaviour* mirrors `mlx-pipeline.py:pipeline()`: Brave+
+                   Tavily run when the judge says yes, Korean snippets are translated to
+                   English, and `build_search_context_prompt()` wraps the reasoner input.
+                   Varies by run, network and API keys.
 
-  parity             — mirrors `mlx-pipeline.py:pipeline()`: when the judge says yes,
-                       Brave+Tavily run, Korean snippets are translated to English, and
-                       `build_search_context_prompt()` wraps the reasoner input. Results
-                       vary run to run and depend on network and API keys.
+--profile production   translate 2000 / reason 4000 — the limits `mlx-pipeline.py`
+                       actually uses today.
+          candidate    translate 4000 / reason 8000 — headroom for Qwen3.6, which
+                       exhausts 4000 mid-reasoning on analytical prompts (#40).
 
-Both modes now pass the full reasoner output to back-translation, matching production.
-An earlier version truncated it at 6000 characters, which production does not do.
+`--search parity` matches production's search *behaviour only*. It is NOT full
+production parity: the generation profile is a separate axis, and `--profile candidate`
+deliberately diverges. Only `--search parity --profile production` reproduces
+`mlx-pipeline.py` as shipped.
+
+Both settings pass the full reasoner output to back-translation, matching production. An
+earlier version truncated it at 6000 characters, which production does not do.
 
 Usage:
     python run.py three-stage-gpt-oss
-    python run.py three-stage-qwen36 --mode parity
-    python run.py single-exaone --resume
+    python run.py three-stage-qwen36 --profile candidate
+    python run.py single-exaone --search parity --profile production --resume
 """
 import hashlib, json, os, platform, re, subprocess, sys, time
 from datetime import datetime, timezone
@@ -44,7 +52,15 @@ CONFIGS = {
     "single-exaone": dict(kind="single", model="mlx-community/EXAONE-4.0-32B-4bit"),
 }
 
-GEN = dict(translate_max_tokens=4000, reason_max_tokens=8000, single_max_tokens=8000)
+PROFILES = {
+    # Mirrors mlx-pipeline.py: _stream_qwen(max_tokens=2000), _stream_reasoner(max_tokens=4000)
+    "production": dict(translate_max_tokens=2000, reason_max_tokens=4000,
+                       single_max_tokens=4000),
+    # Headroom for Qwen3.6, which does not close </think> within 4000 on analytical prompts
+    "candidate": dict(translate_max_tokens=4000, reason_max_tokens=8000,
+                      single_max_tokens=8000),
+}
+GEN = {}  # bound in main() from --profile
 
 THINK_SPLIT = re.compile(r"</think>|<\|channel\|>final<\|message\|>|assistantfinal")
 
@@ -72,7 +88,7 @@ def harness_hash():
     return h.hexdigest()[:16]
 
 
-def env_metadata(mode):
+def env_metadata(search, profile):
     def ver(mod):
         try:
             return __import__(mod).__version__
@@ -88,7 +104,9 @@ def env_metadata(mode):
     dirty = git("status", "--porcelain")
     return dict(
         timestamp=datetime.now(timezone.utc).isoformat(),
-        mode=mode,
+        search=search,
+        profile=profile,
+        production_equivalent=(search == "parity" and profile == "production"),
         repo_commit=git("rev-parse", "HEAD"),
         repo_dirty=bool(dirty),
         dirty_paths=[l[3:] for l in dirty.splitlines()] if dirty else [],
@@ -98,7 +116,7 @@ def env_metadata(mode):
         python=sys.version.split()[0],
         platform=platform.platform(), machine=platform.machine(),
         mlx=ver("mlx"), mlx_lm=ver("mlx_lm"), transformers=ver("transformers"),
-        generation=dict(sampler="greedy (temp=0 default)", **GEN),
+        generation=dict(sampler="greedy (temp=0 default)", profile=profile, **GEN),
     )
 
 
@@ -133,18 +151,18 @@ def do_search(tm, tt, ko_query, en_query):
         len(ko_results) + len(en_results)
 
 
-def run_case_3stage(c, tm, tt, rm, rt, think, mode):
+def run_case_3stage(c, tm, tt, rm, rt, think, search):
     t0 = time.time()
     s1 = call(tm, tt, prompts.TRANSLATE_KO_TO_EN, c["query"], GEN["translate_max_tokens"],
               thinking=False)
     en_q = re.sub(r"SEARCH:\s*(yes|no)", "", s1["text"]).strip()
     search_flag = bool(re.search(r"SEARCH:\s*yes", s1["text"], re.I))
 
-    search = None
+    searched = None
     reason_input = en_q
-    if mode == "parity" and search_flag:
+    if search == "parity" and search_flag:
         ctx, translated, hits = do_search(tm, tt, c["query"], en_q)
-        search = dict(hits=hits, translated_ko_snippets=translated, context=ctx)
+        searched = dict(hits=hits, translated_ko_snippets=translated, context=ctx)
         reason_input = prompts.build_search_context_prompt(ctx, en_q)
 
     s2 = call(rm, rt, prompts.REASONER_SYSTEM, reason_input, GEN["reason_max_tokens"],
@@ -153,8 +171,8 @@ def run_case_3stage(c, tm, tt, rm, rt, think, mode):
     s3 = call(tm, tt, prompts.TRANSLATE_EN_TO_KO, s2["text"],
               GEN["translate_max_tokens"], thinking=False)
     return dict(id=c["id"], query=c["query"], total_secs=round(time.time() - t0, 2),
-                search_judged=search_flag, search_performed=search is not None,
-                search=search, stages=dict(ko2en=s1, reason=s2, en2ko=s3),
+                search_judged=search_flag, search_performed=searched is not None,
+                search=searched, stages=dict(ko2en=s1, reason=s2, en2ko=s3),
                 final=s3["text"])
 
 
@@ -166,10 +184,39 @@ def save(dest, payload):
     os.replace(tmp, dest)
 
 
+def arg(flag, default):
+    return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv else default
+
+
+RESUME_KEYS = ("search", "profile", "harness_sha256_16", "prompts_sha256_16")
+
+
+def check_resumable(payload, env, cfg):
+    """Refuse to append results produced by different code or settings.
+
+    Without this, --resume silently mixes runs from different harness revisions or
+    generation profiles into one file, and the resulting numbers are unattributable.
+    """
+    prev = payload.get("env", {})
+    diffs = [(k, prev.get(k), env[k]) for k in RESUME_KEYS if prev.get(k) != env[k]]
+    if payload.get("config_detail") != cfg:
+        diffs.append(("config_detail", payload.get("config_detail"), cfg))
+    if diffs:
+        lines = "\n".join(f"    {k}: existing={o!r} current={n!r}" for k, o, n in diffs)
+        raise SystemExit(
+            "refusing to --resume: the existing run was produced by different "
+            f"code or settings.\n{lines}\n"
+            "    Start a fresh run, or delete the existing file to overwrite.")
+
+
 def main():
     name = sys.argv[1]
-    mode = sys.argv[sys.argv.index("--mode") + 1] if "--mode" in sys.argv else "control"
-    assert mode in ("control", "parity"), mode
+    search = arg("--search", "off")
+    profile = arg("--profile", "candidate")
+    assert search in ("off", "parity"), search
+    assert profile in PROFILES, profile
+    GEN.update(PROFILES[profile])
+
     resume = "--resume" in sys.argv
     cfg = CONFIGS[name]
 
@@ -177,16 +224,20 @@ def main():
     if "--holdout" not in sys.argv:
         cases = [c for c in cases if not c.get("holdout")]
 
-    dest = f"{HERE}/outputs/{name}/run-{mode}.json"
+    env = env_metadata(search, profile)
+    dest = f"{HERE}/outputs/{name}/run-search-{search}-{profile}.json"
     os.makedirs(os.path.dirname(dest), exist_ok=True)
-    payload = dict(config=name, config_detail=cfg, env=env_metadata(mode), results=[])
+    payload = dict(config=name, config_detail=cfg, env=env, results=[])
     if resume and os.path.exists(dest):
-        payload = json.load(open(dest))
+        existing = json.load(open(dest))
+        check_resumable(existing, env, cfg)
+        payload = existing
         done = {r["id"] for r in payload["results"]}
         cases = [c for c in cases if c["id"] not in done]
         print(f"resuming — {len(done)} cases already recorded", flush=True)
 
-    print(f"=== {name} [{mode}] ({len(cases)} to run) ===", flush=True)
+    print(f"=== {name} [search={search} profile={profile}] ({len(cases)} to run) ===",
+          flush=True)
     if not cases:
         return
 
@@ -195,7 +246,7 @@ def main():
         rm, rt = load(cfg["reasoner"])
         think = cfg.get("reasoner_thinking")
         for c in cases:
-            row = run_case_3stage(c, tm, tt, rm, rt, think, mode)
+            row = run_case_3stage(c, tm, tt, rm, rt, think, search)
             payload["results"].append(row)
             save(dest, payload)  # per-case, not at the end
             flag = "  [UNTERMINATED THINK]" if row["stages"]["reason"]["unterminated_think"] else ""

@@ -51,10 +51,12 @@ described as "4x less corruption", which the data does not support.
 
 ```bash
 cd eval/issue-43-proper-noun-corruption
-python run.py three-stage-gpt-oss              # control mode (no search)
-python run.py three-stage-qwen36 --mode parity # mirrors production, incl. search
-python run.py single-exaone --resume           # continue an interrupted run
-python score.py
+python run.py three-stage-gpt-oss                             # search off, candidate profile
+python run.py three-stage-qwen36 --profile production         # production token limits
+python run.py single-exaone --search parity --profile production   # the shipped pipeline
+python run.py three-stage-gpt-oss --resume                    # continue an interrupted run
+python score.py                                               # default tag
+python score.py --tag search-parity-production
 
 # entities needing a verdict
 python score.py --candidates three-stage-gpt-oss >> annotations.jsonl
@@ -70,7 +72,9 @@ made while the harness was uncommitted records the *previous* HEAD, which does n
 identify the code that produced it. Check `repo_dirty` before trusting `repo_commit`.
 
 Long runs save after every case (atomic replace) and support `--resume`, so an
-interrupted multi-hour run is not lost.
+interrupted multi-hour run is not lost. `--resume` refuses to append when
+`config_detail`, `search`, `profile`, `harness_sha256_16` or `prompts_sha256_16` differ
+from the existing file, so results from different code never mix into one record.
 
 ## Isolating the damage stage — still open
 
@@ -95,17 +99,27 @@ Experiment A is a **necessary, not sufficient** check on the translator: names s
 a newline-separated list does not clear translation, because names in running prose carry
 different context and segmentation.
 
-## Run modes
+## Two axes — neither one alone is "production"
 
-`control` (default) disables web search — the `SEARCH:` judgment is recorded but not
-acted on. Reproducible, and corruption is attributable to the pipeline rather than to
-whatever the web returned. **This is not what production does.**
+**`--search off`** (default) disables web search; the `SEARCH:` judgment is recorded but
+not acted on. Reproducible, and corruption is attributable to the pipeline rather than to
+whatever the web returned.
+**`--search parity`** mirrors production's *search behaviour only*: search runs when the
+judge says yes, Korean snippets are translated to English, and
+`build_search_context_prompt()` wraps the reasoner input.
 
-`parity` mirrors `mlx-pipeline.py:pipeline()`: search runs when the judge says yes,
-Korean snippets are translated to English, and `build_search_context_prompt()` wraps the
-reasoner input. Results vary by run, network and API keys.
+**`--profile production`** — translate 2000 / reason 4000, the limits `mlx-pipeline.py`
+uses today (`_stream_qwen`, `_stream_reasoner`).
+**`--profile candidate`** (default) — translate 4000 / reason 8000, headroom for Qwen3.6,
+which does not close `</think>` within 4000 on analytical prompts (#40).
 
-Never compare a `control` number against a `parity` number.
+Only **`--search parity --profile production`** reproduces the shipped pipeline. Runs
+record `production_equivalent` in metadata so this is never in doubt. Output files are
+named `run-search-<search>-<profile>.json`; compare only within one tag.
+
+An earlier revision named these `control`/`parity` and claimed parity mirrored
+production. It did not — the generation profile diverged at 4000/8000 while production
+used 2000/4000.
 
 ## Baseline results — v1 and v2 are NOT directly comparable
 
@@ -116,8 +130,9 @@ hanja duplicate of `원균` (a mistake), and `와키자카` is a Japanese comman
 scope for a Korean-proper-noun eval. `황진` was added. Total 43 → 42.
 
 **Reasoner budget.** v1 used `max_tokens=1600`, which truncated Qwen3.6 mid-reasoning.
-v2 uses 8000. This changed latency by ~2.8x, so v1 latencies measure truncation, not
-throughput.
+v2 defaults to the `candidate` profile at 8000. This changed latency by ~2.8x, so v1
+latencies measure truncation, not throughput. Note that neither matches production's
+4000 — use `--profile production` for that.
 
 **Recall method.** v1 derived recall from the general extractor, whose plain-text
 pattern is fixed at 3 syllables. Two-syllable names (`이익`, `원균`, `권율`, `일연`,
@@ -132,7 +147,7 @@ formatting-dependent and understated. v2 matches canonical entities directly.
 | `three-stage-gpt-oss` | 4 | 42.5 s |
 | `three-stage-qwen36` | 4 | 25.6 s |
 
-### v2 (this harness, control mode, 8000-token reasoner, direct canonical matching)
+### v2 (this harness, `search-off-candidate`, direct canonical matching)
 
 | Configuration | Recall /42 | Avg latency |
 |---|---|---|

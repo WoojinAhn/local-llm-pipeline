@@ -14,8 +14,12 @@ Two metrics are computed separately and must not be conflated:
                          `unreviewed`, never silently counted as fabricated.
 
 Usage:
-    python score.py                      # score all configs present
-    python score.py --candidates <cfg>   # emit unannotated entities for review
+    python score.py                              # default tag search-off-candidate
+    python score.py --tag search-parity-production
+    python score.py --candidates <cfg>           # emit entities needing a verdict
+
+Only compare configs sharing one tag. A mismatched harness or prompts hash across
+the scored set is reported as a warning.
 """
 import json, os, re, sys
 from collections import Counter
@@ -84,8 +88,8 @@ def load_annotations():
     return ann
 
 
-def score_config(name, cases, ann, mode="control"):
-    path = f"{HERE}/outputs/{name}/run-{mode}.json"
+def score_config(name, cases, ann, tag="search-off-candidate"):
+    path = f"{HERE}/outputs/{name}/run-{tag}.json"
     run = json.load(open(path))
     by_id = {c["id"]: c for c in cases}
     tp = fn = 0
@@ -116,8 +120,8 @@ def main():
 
     if "--candidates" in sys.argv:
         name = sys.argv[sys.argv.index("--candidates") + 1]
-        mode = sys.argv[sys.argv.index("--mode") + 1] if "--mode" in sys.argv else "control"
-        s = score_config(name, cases, ann, mode)
+        tag = sys.argv[sys.argv.index("--tag") + 1] if "--tag" in sys.argv else "search-off-candidate"
+        s = score_config(name, cases, ann, tag)
         for pc in s["per_case"]:
             for e in pc["outside"]:
                 if (pc["id"], e) not in ann:
@@ -125,17 +129,21 @@ def main():
                                           note=""), ensure_ascii=False))
         return
 
-    mode = sys.argv[sys.argv.index("--mode") + 1] if "--mode" in sys.argv else "control"
+    tag = sys.argv[sys.argv.index("--tag") + 1] if "--tag" in sys.argv else "search-off-candidate"
     configs = [d for d in sorted(os.listdir(f"{HERE}/outputs"))
                if os.path.isdir(f"{HERE}/outputs/{d}")
-               and os.path.exists(f"{HERE}/outputs/{d}/run-{mode}.json")]
+               and os.path.exists(f"{HERE}/outputs/{d}/run-{tag}.json")]
     if not configs:
-        print(f"no run-{mode}.json found under outputs/ — run run.py first")
+        print(f"no run-{tag}.json found under outputs/ — run run.py first")
         return
+    seen = set()
     for name in configs:
-        s = score_config(name, cases, ann, mode)
-        env = json.load(open(f"{HERE}/outputs/{name}/run-{mode}.json"))["env"]
-        print(f"\n===== {s['config']} [{env['mode']}] "
+        s = score_config(name, cases, ann, tag)
+        env = json.load(open(f"{HERE}/outputs/{name}/run-{tag}.json"))["env"]
+        seen.add((env.get("harness_sha256_16"), env.get("prompts_sha256_16")))
+        print(f"\n===== {s['config']} "
+              f"[search={env.get('search')} profile={env.get('profile')}"
+              f"{' PRODUCTION-EQUIVALENT' if env.get('production_equivalent') else ''}] "
               f"harness={env.get('harness_sha256_16')} "
               f"dirty={env.get('repo_dirty')} =====")
         print(f"  canonical recall : {s['recall_tp']}/{s['recall_tp'] + s['recall_fn']}"
@@ -145,6 +153,9 @@ def main():
             print(f"   {pc['id']} {pc['recall']:>5}  {pc['secs']:>6}s  hit={pc['hit']}")
             if pc["outside"]:
                 print(f"        outside-canonical: {pc['outside']}")
+    if len(seen) > 1:
+        print("\nWARNING: configs above were produced by different harness/prompt "
+              f"revisions {sorted(seen)} — not directly comparable.")
     print("\nNote: entities outside the canonical list are NOT fabrications by default.")
     print("Run --candidates <config> and annotate them in annotations.jsonl.")
 
