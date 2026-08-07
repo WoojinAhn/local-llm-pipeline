@@ -1,0 +1,12 @@
+{"id": "ko-01", "domain": "korea", "query": "조선 후기 실학 사상의 등장 배경과 주요 학파를 설명해줘.", "canonical_people": ["유형원", "이익", "박지원", "박제가", "홍대용", "정약용", "유득공", "이덕무", "김정희"], "canonical_works": ["반계수록", "성호사설", "열하일기", "목민심서", "경세유표", "흠흠신서", "북학의"]}
+{"id": "ko-02", "domain": "korea", "query": "훈민정음 창제 과정과 반대 상소를 올린 인물들을 설명해줘.", "canonical_people": ["세종", "정인지", "신숙주", "성삼문", "최항", "박팽년", "최만리", "정창손"], "canonical_works": ["훈민정음", "훈민정음 해례본", "동국정운"]}
+{"id": "ko-03", "domain": "korea", "query": "임진왜란의 주요 해전과 지휘관을 설명해줘.", "canonical_people": ["이순신", "원균", "권율", "이억기", "정운", "황진"], "canonical_works": ["난중일기", "징비록"]}
+{"id": "ko-04", "domain": "korea", "query": "조선 전기 사림파와 훈구파의 대립, 그리고 4대 사화를 설명해줘.", "canonical_people": ["김종직", "조광조", "김일손", "유자광", "연산군", "중종", "남곤", "심정"], "canonical_works": ["조의제문"]}
+{"id": "ko-05", "domain": "korea", "query": "고려 시대 삼국사기와 삼국유사의 편찬 배경과 차이를 설명해줘.", "canonical_people": ["김부식", "일연", "인종", "각훈"], "canonical_works": ["삼국사기", "삼국유사", "해동고승전"]}
+{"id": "ko-06", "domain": "korea", "query": "한국 근대 개화파의 갑신정변 전개 과정과 주요 인물을 설명해줘.", "canonical_people": ["김옥균", "박영효", "홍영식", "서광범", "서재필", "민영익", "고종"], "canonical_works": ["한성순보", "갑신일록"]}
+{"id": "ctl-01", "domain": "control", "query": "분산 시스템에서 CAP 정리의 실무적 함의를 설명해줘.", "canonical_people": [], "canonical_works": []}
+{"id": "ctl-02", "domain": "control", "query": "통화 긴축이 신흥국 자본 유출에 미치는 경로를 분석해줘.", "canonical_people": [], "canonical_works": []}
+{"id": "ctl-03", "domain": "control", "query": "트랜스포머 어텐션의 계산 복잡도와 완화 기법을 설명해줘.", "canonical_people": [], "canonical_works": []}
+{"id": "hold-01", "domain": "korea", "holdout": true, "query": "발해의 건국 과정과 대외 관계를 설명해줘.", "canonical_people": ["대조영", "대무예", "대흠무", "걸사비우"], "canonical_works": []}
+{"id": "hold-02", "domain": "korea", "holdout": true, "query": "조선 후기 진경산수화의 대표 화가와 작품을 설명해줘.", "canonical_people": ["정선", "김홍도", "신윤복", "심사정"], "canonical_works": ["인왕제색도", "금강전도"]}
+{"id": "hold-03", "domain": "control", "holdout": true, "query": "이벤트 소싱과 CRUD 아키텍처의 트레이드오프를 분석해줘.", "canonical_people": [], "canonical_works": []}

@@ -1,0 +1,34 @@
+{"case_id": "ko-02", "entity": "신석주", "verdict": "fabricated", "note": "신숙주 corrupted by one syllable; appears in a 집현전 scholar list"}
+{"case_id": "ko-02", "entity": "정경성", "verdict": "fabricated", "note": "no such 집현전 scholar"}
+{"case_id": "ko-02", "entity": "이세광", "verdict": "fabricated", "note": "no such figure in the 훈민정음 record"}
+{"case_id": "ko-02", "entity": "김세정", "verdict": "fabricated", "note": "no such figure"}
+{"case_id": "ko-03", "entity": "원경", "verdict": "fabricated", "note": "원균 corrupted; described as 'executed later', matching 원균's fate"}
+{"case_id": "ko-03", "entity": "김용식", "verdict": "fabricated", "note": "invented naval commander"}
+{"case_id": "ko-03", "entity": "김장환", "verdict": "fabricated", "note": "invented naval commander"}
+{"case_id": "ko-03", "entity": "심유섭", "verdict": "fabricated", "note": "invented naval commander"}
+{"case_id": "ko-03", "entity": "권황진", "verdict": "fabricated", "note": "likely a merge of 권율 and 황진, both real, into one non-existent person"}
+{"case_id": "ko-03", "entity": "고니시", "verdict": "valid", "note": "고니시 유키나가, Japanese commander; omitted from canonical list"}
+{"case_id": "ko-03", "entity": "우키타", "verdict": "valid", "note": "우키타 히데이에, Japanese commander; omitted from canonical list"}
+{"case_id": "ko-04", "entity": "한명회", "verdict": "valid", "note": "real 훈구파 figure; omitted from canonical list"}
+{"case_id": "ko-04", "entity": "윤원형", "verdict": "valid", "note": "real, 을사사화; omitted from canonical list"}
+{"case_id": "ko-04", "entity": "김안로", "verdict": "valid", "note": "real 중종-era official; omitted from canonical list"}
+{"case_id": "ko-04", "entity": "최사위", "verdict": "ambiguous", "note": "a 최사위 exists in Goryeo; wrong era for this query, so either misplaced or fabricated"}
+{"case_id": "ko-05", "entity": "이차돈", "verdict": "valid", "note": "real Silla martyr, plausibly cited from 삼국유사; omitted from canonical list"}
+{"case_id": "ko-06", "entity": "김홍문", "verdict": "fabricated", "note": "given fabricated dates (1842~1916); no such 개화파 figure"}
+{"case_id": "ko-06", "entity": "박영호", "verdict": "fabricated", "note": "박영효 corrupted by one syllable"}
+{"case_id": "ko-06", "entity": "이광재", "verdict": "fabricated", "note": "invented 갑신정변 participant"}
+{"case_id": "ko-06", "entity": "이홍재", "verdict": "fabricated", "note": "invented"}
+{"case_id": "ko-06", "entity": "김홍집", "verdict": "valid", "note": "real, though 온건개화파 rather than 급진; omitted from canonical list"}
+{"case_id": "ko-06", "entity": "유길준", "verdict": "valid", "note": "real 개화파 figure; omitted from canonical list"}
+{"case_id": "ko-06", "entity": "김윤식", "verdict": "valid", "note": "real 온건개화파; omitted from canonical list"}
+{"case_id": "ko-06", "entity": "윤웅렬", "verdict": "valid", "note": "real, involved in the period; omitted from canonical list"}
+{"case_id": "ko-06", "entity": "명성황후", "verdict": "valid", "note": "real; omitted from canonical list"}
+{"case_id": "ko-01", "entity": "유덕공", "verdict": "fabricated", "note": "유득공 corrupted by one syllable"}
+{"case_id": "ko-01", "entity": "이수광", "verdict": "valid", "note": "real (지봉유설), a Silhak precursor; omitted from canonical list"}
+{"case_id": "ko-02", "entity": "이성려", "verdict": "fabricated", "note": "no such 훈민정음-era figure"}
+{"case_id": "ko-02", "entity": "한호", "verdict": "ambiguous", "note": "한호 (석봉) is real but a calligrapher of a later period; wrong context"}
+{"case_id": "ko-05", "entity": "김복식", "verdict": "fabricated", "note": "김부식 corrupted by one syllable, in the same answer that also names 김부식 correctly"}
+{"case_id": "ko-04", "entity": "성균관", "verdict": "not-a-person", "note": "institution, extractor false positive"}
+{"case_id": "ko-04", "entity": "홍문관", "verdict": "not-a-person", "note": "institution, extractor false positive"}
+{"case_id": "ko-03", "entity": "명량전", "verdict": "not-a-person", "note": "battle name, extractor false positive"}
+{"case_id": "ko-03", "entity": "노량전", "verdict": "not-a-person", "note": "battle name, extractor false positive"}
