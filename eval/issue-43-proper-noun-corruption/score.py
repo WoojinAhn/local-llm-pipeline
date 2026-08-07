@@ -48,6 +48,24 @@ GLOSS = re.compile(r"([가-힣]{2,4})\s*\(\s*[一-鿿]{2,4}\s*\)")
 # the recall side. Widening raises noise, which is fine: candidates go to a human.
 PLAIN = re.compile(rf"(?<![가-힣])([{SURNAMES}][가-힣]{{1,3}})(?![가-힣])")
 WORK = re.compile(r"[《<〈『]([가-힣A-Za-z0-9 ]{2,20})[》>〉』]")
+# Korean attaches particles and honorific titles straight onto a name with no space
+# (성삼문과, 김종직의, 세종대왕). A bare non-Hangul boundary rejects all of those, which
+# undercounted every configuration. Closed lists only, and a non-Hangul boundary is still
+# required after the suffix — so 이익 does not match inside 이익환, and the one-syllable
+# corruptions this eval exists to catch stay excluded.
+PARTICLES = ("이라고", "으로", "께서", "에게", "한테", "보다", "처럼", "같이", "부터", "까지",
+             "라고", "에서", "은", "는", "이", "가", "을", "를", "의", "에", "와", "과",
+             "도", "만", "로", "라", "야", "여", "및", "등")
+TITLES = ("대왕", "장군", "선생", "황제", "임금", "왕", "공")
+
+
+def _alt(words):
+    return "|".join(re.escape(w) for w in sorted(words, key=len, reverse=True))
+
+
+# A title and a particle stack: 세종대왕의. Both optional, and a non-Hangul boundary is
+# still required after them.
+NAME_SUFFIX = rf"(?:{_alt(TITLES)})?(?:{_alt(PARTICLES)})?"
 
 
 def plausible_name(tok):
@@ -67,9 +85,14 @@ def find_canonical(text, canon):
     Boundary lookarounds also do the discrimination that matters here: 이익
     matches 이익, but not 이익환 — which is one of the fabrications this eval
     exists to catch.
+
+    The right boundary additionally admits an attached particle or honorific
+    title (see NAME_SUFFIX). Requiring a bare non-Hangul boundary rejected
+    성삼문과, 김종직의 and 세종대왕, and it did so unevenly across configurations,
+    so the gap between them was overstated as well as the absolute numbers.
     """
     return {e for e in canon
-            if re.search(rf"(?<![가-힣]){re.escape(e)}(?![가-힣])", text)}
+            if re.search(rf"(?<![가-힣]){re.escape(e)}{NAME_SUFFIX}(?![가-힣])", text)}
 
 
 def extract_people(text):
