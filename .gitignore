@@ -4,6 +4,8 @@ __pycache__/
 .claude/
 bin/
 outputs/
+# Eval fixtures are the record being preserved, not generated artifacts.
+!eval/**/outputs/
 *.profraw
 .env
 docs/superpowers/
