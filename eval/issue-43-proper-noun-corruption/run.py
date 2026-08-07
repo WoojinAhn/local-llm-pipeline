@@ -74,21 +74,22 @@ def has_unterminated_think(text):
     return ("<think>" in text or "<|channel|>analysis" in text) and not THINK_SPLIT.search(text)
 
 
-def harness_hash():
-    """Identify the harness itself.
+# Provenance is split so a scorer-only edit does not invalidate raw generations.
+# Bundling them meant touching score.py made every prior run un-resumable.
+GENERATION_FILES = ("run.py", "cases.jsonl")
+SCORING_FILES = ("score.py",)
 
-    `repo_commit` alone is not enough: a run made while the harness was uncommitted
-    records the *previous* HEAD, which does not identify the code that produced it.
-    """
+
+def _hash(files):
     h = hashlib.sha256()
-    for f in sorted(("run.py", "score.py", "isolate.py", "cases.jsonl")):
+    for f in sorted(files):
         p = f"{HERE}/{f}"
         if os.path.exists(p):
             h.update(open(p, "rb").read())
     return h.hexdigest()[:16]
 
 
-def env_metadata(search, profile):
+def env_metadata(search, profile, name):
     def ver(mod):
         try:
             return __import__(mod).__version__
@@ -106,11 +107,20 @@ def env_metadata(search, profile):
         timestamp=datetime.now(timezone.utc).isoformat(),
         search=search,
         profile=profile,
-        production_equivalent=(search == "parity" and profile == "production"),
+        settings_equivalent_to_production=(search == "parity" and profile == "production"),
+        # Settings equivalence is NOT pipeline equivalence. Two gaps remain even at
+        # --search parity --profile production:
+        #   config — mlx-pipeline.py ships Qwen3-14B + gpt-oss-120b in 3 stages. Any
+        #            other config here is a candidate, not production, whatever the flags.
+        #   state  — production accumulates _reasoner_history and reuses prompt_cache
+        #            across turns. This harness runs each case cold and independent.
+        config_matches_shipped=(name == "three-stage-gpt-oss"),
+        reproduces_conversation_state=False,
         repo_commit=git("rev-parse", "HEAD"),
         repo_dirty=bool(dirty),
         dirty_paths=[l[3:] for l in dirty.splitlines()] if dirty else [],
-        harness_sha256_16=harness_hash(),
+        generation_sha256_16=_hash(GENERATION_FILES),
+        scoring_sha256_16=_hash(SCORING_FILES),
         prompts_sha256_16=hashlib.sha256(
             open(f"{ROOT}/prompts.py", "rb").read()).hexdigest()[:16],
         python=sys.version.split()[0],
@@ -188,7 +198,8 @@ def arg(flag, default):
     return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv else default
 
 
-RESUME_KEYS = ("search", "profile", "harness_sha256_16", "prompts_sha256_16")
+# Scoring provenance is deliberately excluded — it does not affect raw generations.
+RESUME_KEYS = ("search", "profile", "generation_sha256_16", "prompts_sha256_16")
 
 
 def check_resumable(payload, env, cfg):
@@ -224,7 +235,7 @@ def main():
     if "--holdout" not in sys.argv:
         cases = [c for c in cases if not c.get("holdout")]
 
-    env = env_metadata(search, profile)
+    env = env_metadata(search, profile, name)
     dest = f"{HERE}/outputs/{name}/run-search-{search}-{profile}.json"
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     payload = dict(config=name, config_detail=cfg, env=env, results=[])

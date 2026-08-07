@@ -6,8 +6,10 @@ Two metrics are computed separately and must not be conflated:
                          Fully automatic. Understates every config, because answers
                          are summaries while canonical lists are exhaustive.
 
-  2. Entity validity   — of the entities the model actually produced, how many are
-                         real. NOT automatic. An entity outside the canonical list is
+  2. Entity validity   — of the entities the extractor *detected*, how many are real.
+                         A DETECTED-CANDIDATE LOWER BOUND, not TP/FP/FN — an
+                         undetected fabrication never enters the denominator, so this
+                         cannot be converted into a fabrication rate. NOT automatic. An entity outside the canonical list is
                          *not* evidence of fabrication: it may be a real figure the
                          list omits. Validity comes from annotations.jsonl, which a
                          human fills in. Unannotated entities are reported as
@@ -41,7 +43,10 @@ STOPWORDS = {
 }
 BOLD = re.compile(r"\*\*([가-힣]{2,4})\*\*")
 GLOSS = re.compile(r"([가-힣]{2,4})\s*\(\s*[一-鿿]{2,4}\s*\)")
-PLAIN = re.compile(rf"(?<![가-힣])([{SURNAMES}][가-힣]{{2}})(?![가-힣])")
+# 2-4 syllables. An earlier version was fixed at 3, so 2-syllable fabrications
+# (the 이익/원균 shape) were invisible on the FP side exactly as they had been on
+# the recall side. Widening raises noise, which is fine: candidates go to a human.
+PLAIN = re.compile(rf"(?<![가-힣])([{SURNAMES}][가-힣]{{1,3}})(?![가-힣])")
 WORK = re.compile(r"[《<〈『]([가-힣A-Za-z0-9 ]{2,20})[》>〉』]")
 
 
@@ -92,6 +97,10 @@ def score_config(name, cases, ann, tag="search-off-candidate"):
     path = f"{HERE}/outputs/{name}/run-{tag}.json"
     run = json.load(open(path))
     by_id = {c["id"]: c for c in cases}
+    expected = {c["id"] for c in cases}
+    present = {r["id"] for r in run["results"]}
+    missing = sorted(expected - present)
+    extra = sorted(present - expected)
     tp = fn = 0
     validity = Counter()
     per_case = []
@@ -111,11 +120,17 @@ def score_config(name, cases, ann, tag="search-off-candidate"):
                              secs=r["total_secs"], verdicts=dict(verdicts)))
     return dict(config=name, recall_tp=tp, recall_fn=fn,
                 recall=round(tp / (tp + fn), 3) if tp + fn else None,
-                validity=dict(validity), per_case=per_case)
+                validity=dict(validity), per_case=per_case,
+                missing_cases=missing, unexpected_cases=extra,
+                complete=not missing and not extra)
 
 
 def main():
     cases = [json.loads(l) for l in open(f"{HERE}/cases.jsonl") if l.strip()]
+    # run.py excludes holdout unless --holdout is passed; the completeness check has to
+    # use the same case set or every default run reports as incomplete.
+    if "--holdout" not in sys.argv:
+        cases = [c for c in cases if not c.get("holdout")]
     ann = load_annotations()
 
     if "--candidates" in sys.argv:
@@ -140,15 +155,22 @@ def main():
     for name in configs:
         s = score_config(name, cases, ann, tag)
         env = json.load(open(f"{HERE}/outputs/{name}/run-{tag}.json"))["env"]
-        seen.add((env.get("harness_sha256_16"), env.get("prompts_sha256_16")))
+        seen.add((env.get("generation_sha256_16") or env.get("harness_sha256_16"),
+                  env.get("prompts_sha256_16")))
         print(f"\n===== {s['config']} "
               f"[search={env.get('search')} profile={env.get('profile')}"
               f"{' PRODUCTION-EQUIVALENT' if env.get('production_equivalent') else ''}] "
-              f"harness={env.get('harness_sha256_16')} "
+              f"gen={env.get('generation_sha256_16') or env.get('harness_sha256_16')} "
               f"dirty={env.get('repo_dirty')} =====")
+        if not s["complete"]:
+            print("  *** INCOMPLETE RUN — SCORES BELOW ARE NOT COMPARABLE ***")
+            if s["missing_cases"]:
+                print(f"      missing cases: {s['missing_cases']}")
+            if s["unexpected_cases"]:
+                print(f"      unexpected cases: {s['unexpected_cases']}")
         print(f"  canonical recall : {s['recall_tp']}/{s['recall_tp'] + s['recall_fn']}"
               f"  ({s['recall']})")
-        print(f"  entity validity  : {s['validity']}")
+        print(f"  entity validity  : {s['validity']}   [lower bound — see note]")
         for pc in s["per_case"]:
             print(f"   {pc['id']} {pc['recall']:>5}  {pc['secs']:>6}s  hit={pc['hit']}")
             if pc["outside"]:
@@ -158,6 +180,9 @@ def main():
               f"revisions {sorted(seen)} — not directly comparable.")
     print("\nNote: entities outside the canonical list are NOT fabrications by default.")
     print("Run --candidates <config> and annotate them in annotations.jsonl.")
+    print("Validity counts are a DETECTED-CANDIDATE LOWER BOUND, not TP/FP/FN: the")
+    print("extractor only surfaces names it matches, so undetected fabrications are")
+    print("absent from the denominator. Never report these as a fabrication rate.")
 
 
 if __name__ == "__main__":

@@ -25,8 +25,10 @@ It **understates every configuration**, because model answers are summaries whil
 canonical lists are exhaustive. Use it for comparison between configurations, never as
 an accuracy rate.
 
-**Entity validity** — of the names a model actually produced, how many are real. This is
-**not** automatic and must not be made automatic. An entity outside the canonical list is
+**Entity validity** — of the names the extractor **detected**, how many are real. This is
+a **detected-candidate lower bound, not TP/FP/FN**: a fabrication the extractor misses
+never enters the denominator, so these counts cannot be converted into a fabrication
+rate. It is **not** automatic and must not be made automatic. An entity outside the canonical list is
 not evidence of fabrication — it is frequently a real figure the list omits. In the first
 run, `한명회`, `유길준`, `김윤식`, `고니시` and others fell outside the canonical lists and
 are all real people. Only `annotations.jsonl` decides validity; unannotated entities are
@@ -39,8 +41,15 @@ described as "4x less corruption", which the data does not support.
 
 - The person-name extractor is regex over Korean text and is noisy in both directions.
   Korean surname syllables are common in ordinary vocabulary, so a first version matched
-  large numbers of non-names. The current version is tighter but still surfaces
-  non-entities — this is why extraction feeds annotation rather than a verdict.
+  large numbers of non-names. The current version still surfaces non-entities — this is
+  why extraction feeds annotation rather than a verdict.
+- The extractor was fixed at 3 syllables in two places. Recall was fixed first (it now
+  matches canonical entities directly); the outside-candidate pattern kept the same blind
+  spot until later, so 2-syllable fabrications were invisible on the FP side. Now 2-4
+  syllables, which raises noise — acceptable, because candidates go to a human.
+- Provenance is split: `generation_sha256_16` (run.py + cases.jsonl) and
+  `scoring_sha256_16` (score.py). They were bundled at first, which meant a scorer-only
+  edit invalidated `--resume` for raw generations that were still perfectly valid.
 - Canonical lists are hand-curated and incomplete by construction.
 - n=6 Korea-domain cases (plus 2 holdout). Enough to establish that the effect is
   systematic, not enough to rank configurations precisely.
@@ -53,7 +62,7 @@ described as "4x less corruption", which the data does not support.
 cd eval/issue-43-proper-noun-corruption
 python run.py three-stage-gpt-oss                             # search off, candidate profile
 python run.py three-stage-qwen36 --profile production         # production token limits
-python run.py single-exaone --search parity --profile production   # the shipped pipeline
+python run.py single-exaone --search parity --profile production    # settings only
 python run.py three-stage-gpt-oss --resume                    # continue an interrupted run
 python score.py                                               # default tag
 python score.py --tag search-parity-production
@@ -113,9 +122,22 @@ uses today (`_stream_qwen`, `_stream_reasoner`).
 **`--profile candidate`** (default) — translate 4000 / reason 8000, headroom for Qwen3.6,
 which does not close `</think>` within 4000 on analytical prompts (#40).
 
-Only **`--search parity --profile production`** reproduces the shipped pipeline. Runs
-record `production_equivalent` in metadata so this is never in doubt. Output files are
-named `run-search-<search>-<profile>.json`; compare only within one tag.
+`--search parity --profile production` matches production's **settings**. It does not
+make a run "the shipped pipeline" — two gaps remain, and metadata records all three
+facts separately:
+
+| Field | Meaning |
+|---|---|
+| `settings_equivalent_to_production` | search + token limits match |
+| `config_matches_shipped` | the models are Qwen3-14B + gpt-oss-120b in 3 stages |
+| `reproduces_conversation_state` | always `false` — see below |
+
+Production accumulates `_reasoner_history` and reuses `prompt_cache` across turns. This
+harness runs every case cold and independent, so no configuration here reproduces a
+multi-turn session. `single-exaone --search parity --profile production` is a
+candidate at production settings — not production.
+
+Output files are named `run-search-<search>-<profile>.json`; compare only within one tag.
 
 An earlier revision named these `control`/`parity` and claimed parity mirrored
 production. It did not — the generation profile diverged at 4000/8000 while production
