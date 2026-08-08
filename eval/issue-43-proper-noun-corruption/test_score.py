@@ -3,12 +3,20 @@
 Plain asserts, no test framework — the repo has no test suite and this harness is
 self-contained. Run directly:
 
-    python eval/issue-43-proper-noun-corruption/test_score.py
+    .venv/bin/python eval/issue-43-proper-noun-corruption/test_score.py
 """
-import os, sys
+import json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import score
 from score import extract_people, find_canonical
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+# Canonical entries that legitimately carry no surname: regnal names and dharma names.
+# Everything else must start with a listed surname or the extractor can never surface it
+# — nor any corruption of it, which is the whole point of the candidate side. #55
+NOT_SURNAME_BEARING = {"세종", "중종", "각훈", "일연"}
 
 CANON = ["세종", "성삼문", "김종직", "연산군", "이익", "김부식", "정약용", "원균",
          "황진", "심정", "인종", "최항"]
@@ -68,6 +76,10 @@ EXTRACT_CASES = [
     ("김복식의 삼국사기", "김복식", "particle 의 stripped"),
     ("박영호가 참여했다", "박영호", "particle 가 stripped"),
     ("신석주 편찬", "신석주", "bare form was already surfaced"),
+    # 원 was missing from SURNAMES, so 원균's corruption sat in a committed artifact
+    # (three-stage-qwen36 ko-03) and could never be surfaced. #55
+    ("이순신(주요 장군), 원경(초기, 후에 처형됨)", "원경", "surname 원 (#55)"),
+    ("민영직이 참여했다", "민영직", "surname 민 (#55)"),
     # A multi-syllable suffix pushed a 3-syllable name out of PLAIN's 4-syllable window,
     # so 17 of the 37 declared titles/particles were unreachable — 신석주에게 surfaced
     # only the unrelated 전달했다. PLAIN_SUFFIXED splits the suffix off instead.
@@ -102,6 +114,29 @@ def main():
             print(f"        text={text!r}")
             print(f"        expected={sorted(expected)}  got={sorted(got)}")
     total = len(CASES)
+
+    # Sweep, not a patch: every canonical person must be reachable by the extractor.
+    unreachable = []
+    for line in open(f"{HERE}/cases.jsonl"):
+        if not line.strip():
+            continue
+        c = json.loads(line)
+        if c["domain"] != "korea":
+            continue
+        for person in c["canonical_people"]:
+            if person in NOT_SURNAME_BEARING:
+                continue
+            if person[0] not in score.SURNAMES:
+                unreachable.append(f"{c['id']}:{person} (initial {person[0]!r})")
+    total += 1
+    ok = not unreachable
+    failed += not ok
+    print(f"  {'PASS' if ok else 'FAIL'}  every canonical person's surname is in SURNAMES")
+    if not ok:
+        print(f"        unreachable by extract_people: {unreachable}")
+        print(f"        add the surname to score.SURNAMES, or list a non-surname "
+              f"entry in NOT_SURNAME_BEARING")
+
     for text, want, why in EXTRACT_CASES:
         got = extract_people(text)
         ok = want in got

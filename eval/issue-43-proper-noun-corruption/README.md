@@ -280,6 +280,16 @@ verb-stem syllable (유지**하**, 강요**받**, 전복하**려**). Without the
 arrive with several hundred extra candidates. Recall is untouched: `extract_people` never
 feeds a recall figure.
 
+`SURNAMES` gates that whole path, and a missing entry fails silently — no error, the name
+simply is never a candidate. `민` and `원` were both absent (#55), so `민영익`, `원균` and
+any corruption of them were unreachable; `원균`'s corruption `원경` sits in
+`three-stage-qwen36` ko-03 and had never been surfaced. Admitting the two surnames also
+admits ordinary words starting with them (민족, 원칙 …), so the observed ones went to
+`STOPWORDS`: +10 candidates over 1661, against `원경` becoming visible. `test_score.py`
+now sweeps `cases.jsonl` and fails if any canonical person's initial is missing, with
+regnal and dharma names (세종, 중종, 각훈, 일연) listed as the only legitimate exceptions —
+a new case with an unlisted surname breaks a test instead of going quietly invisible.
+
 ### Candidate vs production, same configurations
 
 | Configuration | Profile | Recall | Avg latency (Korea) |
