@@ -68,6 +68,16 @@ def _alt(words):
 NAME_SUFFIX = rf"(?:{_alt(TITLES)})?(?:{_alt(PARTICLES)})?"
 TITLE_SUFFIX = rf"(?:{_alt(TITLES)})?"
 
+# The candidate extractor's plain pattern, splitting name from suffix so the suffix does
+# not eat the name's own syllable budget. PLAIN caps a token at four syllables, so a
+# 3-syllable name with a 2-syllable suffix (신석주에게, 신석주께서, 신석주대왕) never
+# reached the extractor at all — 17 of the 37 entries in TITLES + PARTICLES were
+# unreachable for a 3-syllable name, and 신석주에게 surfaced only the unrelated 전달했다.
+# The name group is lazy so the regex prefers splitting a suffix off over swallowing it.
+PLAIN_SUFFIXED = re.compile(
+    rf"(?<![가-힣])([{SURNAMES}][가-힣]{{1,3}}?)"
+    rf"((?:{_alt(TITLES)})?(?:{_alt(PARTICLES)})?)(?![가-힣])")
+
 # Canonical entries whose spelling is also ordinary vocabulary, or becomes a different
 # real person once a particle attaches. A particle-suffixed match cannot be told apart
 # from 이익 "profit", 심정 "feelings", 인종 "race", 정선 (Jeongseon county / 精選), or from
@@ -90,6 +100,56 @@ def canonical_pattern(entity):
 def plausible_name(tok):
     return (len(tok) >= 2 and tok not in STOPWORDS
             and tok[-1] not in ENDINGS and tok[0] in SURNAMES)
+
+
+# Longest first so 에게 is tried before 에, 대왕 before 왕.
+_ATTACHED = tuple(sorted(set(TITLES + PARTICLES), key=len, reverse=True))
+# Separating a particle from a conjugated verb leaves its stem (유지하는 -> 유지하,
+# 강요받은 -> 강요받, 전복하려는 -> 전복하려). Those start with a surname character often
+# enough to pass plausible_name, and they are the bulk of the noise this path would
+# otherwise add. Dropping 려/어 as well costs no recovered name.
+_VERB_STEM_TAIL = frozenset("하되받해려어")
+# A stripped form must still be a 3-syllable shape. At two it is almost always ordinary
+# vocabulary (구조, 문제, 왕조); measured over the committed artifacts, allowing two
+# syllables added 615 candidates and recovered no additional name.
+_MIN_STRIPPED = 3
+
+
+def strip_attached(tok):
+    """Drop one attached title or particle, leaving at least two syllables."""
+    for suffix in _ATTACHED:
+        if tok.endswith(suffix) and len(tok) - len(suffix) >= 2:
+            return tok[:-len(suffix)]
+    return tok
+
+
+def name_candidate(tok, attached=False):
+    """The name inside a matched token, or None if it does not look like one.
+
+    `attached` means a title or particle was separated off to get here. Before def8942
+    taught recall to read 신석주가, plausible_name dropped it on the ENDINGS check, so
+    the particle-attached fabrications recall had started counting stayed invisible on
+    the candidate side — the two metrics biased in opposite directions.
+
+    Separated tokens are where the noise lives, so they clear stricter shape guards. A
+    token that already passed as written is returned byte-identical.
+
+    Tuned against the committed artifacts rather than by construction. The shipped shape
+    adds 93 candidates over 1568 (+6%) and recovers 김용복, 박희숙, 왕양명, 이재경, 홍경래,
+    명성황후, 인목대비, 고바야카, 유키나 — the invented- and foreign-name shapes this eval
+    exists to catch. Without the two guards the same nine arrive with several hundred
+    extra candidates.
+
+    A real name ending in a particle syllable is truncated rather than dropped, which is
+    acceptable here and only here: candidates go to a human, never to a recall figure.
+    """
+    if attached:
+        return (tok if len(tok) >= _MIN_STRIPPED and tok[-1] not in _VERB_STEM_TAIL
+                and plausible_name(tok) else None)
+    if plausible_name(tok):
+        return tok
+    stripped = strip_attached(tok)
+    return name_candidate(stripped, True) if stripped != tok else None
 
 
 def find_canonical(text, canon):
@@ -123,8 +183,12 @@ def extract_people(text):
     Deliberately imprecise and formatting-dependent — its output feeds human
     annotation, never a recall figure. See module docstring.
     """
-    cands = set(BOLD.findall(text)) | set(GLOSS.findall(text)) | set(PLAIN.findall(text))
-    return {c for c in cands if plausible_name(c)}
+    marked = {(c, False) for c in BOLD.findall(text)}
+    marked |= {(c, False) for c in GLOSS.findall(text)}
+    # PLAIN_SUFFIXED reports the suffix separately, so a multi-syllable one no longer
+    # pushes the name out of the four-syllable capture window.
+    marked |= {(name, bool(suffix)) for name, suffix in PLAIN_SUFFIXED.findall(text)}
+    return {n for n in (name_candidate(t, a) for t, a in marked) if n}
 
 
 def _dirty_label(env):
