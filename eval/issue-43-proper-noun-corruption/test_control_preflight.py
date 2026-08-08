@@ -151,6 +151,43 @@ def _():
     assert cd["questions_sha256_16"] == C.file_sha16(f"{C.HERE}/control_questions.jsonl")
 
 
+@check("config_detail pins the source artifact's content, not just its filename")
+def _():
+    for name in C.REASONERS:
+        cd = C.build_config_detail(name)
+        assert cd["source_sha256_16"] == C.file_sha16(
+            f"{C.HERE}/outputs/{name}/{C.SOURCE_TAG}"), name
+    # Distinct arms read distinct sources; one shared hash would defeat the check.
+    assert len({C.build_config_detail(n)["source_sha256_16"] for n in C.REASONERS}) == \
+        len(C.REASONERS)
+
+
+@check("init_payloads: a regenerated source artifact is refused on --resume")
+def _():
+    env = fresh_env()
+    with tempfile.TemporaryDirectory() as tmp:
+        saved, C.OUT_ROOT = C.OUT_ROOT, tmp
+        try:
+            p = C.init_payloads(env, resume=False)
+            for name in C.REASONERS:
+                R.save(C.dest_path(name), p[name])
+            # Same source_tag, different content — exactly what regenerating the actual
+            # arm produces. Schema 2 pinned only the filename and let this through.
+            real_sha = C.file_sha16
+            C.file_sha16 = lambda p: ("cafebabecafebabe" if p.endswith(C.SOURCE_TAG)
+                                      else real_sha(p))
+            try:
+                C.init_payloads(env, resume=True)
+            except SystemExit as e:
+                assert "config_detail" in str(e), e
+                return
+            finally:
+                C.file_sha16 = real_sha
+            raise AssertionError("resume accepted a different source artifact")
+        finally:
+            C.OUT_ROOT = saved
+
+
 @check("init_payloads: fresh run creates empty per-reasoner payloads")
 def _():
     env = fresh_env()

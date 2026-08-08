@@ -69,11 +69,14 @@ EXPECTED_CALLS = 24
 
 # 1 = alias table inlined in this script, so script_sha256_16 covered it.
 # 2 = alias table lives in canonical_aliases.py and is hashed separately.
-# Records written under schema 1 cannot be upgraded: the hash that would prove which
-# alias table they used is the old script hash, and that script no longer exists on
-# disk. Backfilling today's aliases_sha256_16 would assert something unverified, so a
-# schema-1 record is refused with an explanation instead.
-CONFIG_DETAIL_SCHEMA = 2
+# 3 = the source artifact's content hash is carried, not just its filename. Schema 2
+#     pinned source_tag only, so regenerating the actual arm and resuming appended
+#     results built from a different KO->EN input to results built from the old one,
+#     and the mixed file still passed check_provenance downstream (it records one sha).
+# An older record cannot be upgraded: the hash that would prove which inputs it used was
+# never written. Backfilling today's value would assert something unverified, so the
+# record is refused with an explanation instead.
+CONFIG_DETAIL_SCHEMA = 3
 
 def load_cases():
     cases = [json.loads(l) for l in open(f"{HERE}/cases.jsonl") if l.strip()]
@@ -178,12 +181,16 @@ def build_config_detail(reasoner):
     """Provenance that must match for a resume to be allowed.
 
     run.RESUME_KEYS covers search/profile/generation/prompts hashes but knows nothing
-    about this experiment's own inputs, so the script, alias data and question set are
-    carried here — check_resumable compares config_detail as a whole.
+    about this experiment's own inputs, so the script, alias data, question set and
+    source artifact are carried here — check_resumable compares config_detail as a whole.
+
+    source_tag alone is a filename and says nothing about content: regenerating the
+    actual arm leaves it unchanged, so the source hash is what actually gates a resume.
     """
     return dict(experiment=EXPERIMENT, reasoner=reasoner, profile=PROFILE,
                 config_detail_schema=CONFIG_DETAIL_SCHEMA,
                 source_tag=SOURCE_TAG,
+                source_sha256_16=file_sha16(f"{HERE}/outputs/{reasoner}/{SOURCE_TAG}"),
                 script_sha256_16=file_sha16(f"{HERE}/control_clean_english.py"),
                 aliases_sha256_16=file_sha16(f"{HERE}/canonical_aliases.py"),
                 questions_sha256_16=file_sha16(f"{HERE}/control_questions.jsonl"))
@@ -208,12 +215,14 @@ def init_payloads(env, resume):
                         f"{os.path.relpath(d, HERE)} was written under config_detail "
                         f"schema {prev.get('config_detail_schema', 1)}; this script writes "
                         f"schema {CONFIG_DETAIL_SCHEMA}.\n"
-                        "    Schema 1 inlined the alias table in the script, so its "
-                        "script_sha256_16 covered the aliases; schema 2 hashes\n"
-                        "    canonical_aliases.py separately. The schema-1 hash cannot be "
-                        "re-derived, so resuming would silently mix\n"
-                        "    two different alias tables. If the run is already complete no "
-                        "resume is needed; otherwise start a fresh run.")
+                        "    Schema 1 inlined the alias table in the script; schema 2 "
+                        "hashes canonical_aliases.py separately; schema 3\n"
+                        "    additionally pins the source artifact's content, not just "
+                        "its filename. The missing hashes cannot be\n"
+                        "    re-derived, so resuming would silently mix two different "
+                        "alias tables or two different KO->EN sources.\n"
+                        "    If the run is already complete no resume is needed; "
+                        "otherwise start a fresh run.")
             if not resume:
                 raise SystemExit(
                     f"refusing to overwrite {os.path.relpath(d, HERE)}\n"
