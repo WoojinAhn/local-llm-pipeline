@@ -72,6 +72,17 @@ def romanize(text):
     return "".join(out)
 
 
+def romanize_spaced(text):
+    """Mechanical romanization with syllable boundaries kept as spaces.
+
+    romanize() alone yields one fused token ("sinsukju"), and contains_alias compiles a
+    single-part alias to a bare literal — so the leakage guard only ever matched a
+    spelling no English text uses. Spacing the syllables lets the same _NAME_SEP logic
+    that serves conventional aliases cover "Sin Sukju", "Sin Suk-ju" and "Sinsukju" too.
+    """
+    return " ".join(romanize(ch) for ch in text if "가" <= ch <= "힣")
+
+
 def flat_letters(text):
     """Lowercase, ASCII letters only. Not used by contains_alias, which is word-bounded;
     only for controlled comparisons of short fixed strings in diagnostics and preflight.

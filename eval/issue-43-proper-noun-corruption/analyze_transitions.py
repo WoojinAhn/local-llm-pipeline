@@ -85,9 +85,24 @@ def korea_cases():
     return [c for c in non_holdout_cases() if c["domain"] == "korea"]
 
 
-def unterminated(stage):
-    """No closing marker means the model never left its reasoning block."""
-    return not CLOSURE.search(stage["raw"])
+def emits_closure(results):
+    """Whether this reasoner marks the end of its reasoning at all, in this run.
+
+    A missing closure only means truncation for a model that writes one when it finishes.
+    run.py:has_unterminated_think() uses an opened block as its precondition, but that
+    cannot be reused here: Qwen3.6's chat template opens <think> in the prompt, so the
+    opener is absent from every completion including the genuinely truncated ones. What
+    does separate them is that their siblings closed and they did not — so require the
+    reasoner to have closed at least once before reading a missing marker as truncation.
+    Without this, adding a reasoner that emits no reasoning block would silently drop all
+    of its cases from SENSITIVITY on both arms.
+    """
+    return any(CLOSURE.search(r["stages"]["reason"]["raw"]) for r in results)
+
+
+def unterminated(stage, emits_closure=True):
+    """No closing marker from a reasoner that does emit them: it never left the block."""
+    return emits_closure and not CLOSURE.search(stage["raw"])
 
 
 def near_limit(stage, limit):
@@ -137,10 +152,11 @@ def collect():
         a_e_lim = aenv["generation"]["translate_max_tokens"]
         c_r_lim = cenv["generation"]["reason_max_tokens"]
         c_e_lim = cenv["generation"]["translate_max_tokens"]
+        a_emits, c_emits = emits_closure(A.values()), emits_closure(C.values())
         for c in korea_cases():
             a, b = A[c["id"]], C[c["id"]]
-            a_un = unterminated(a["stages"]["reason"])
-            c_un = unterminated(b["stages"]["reason"])
+            a_un = unterminated(a["stages"]["reason"], a_emits)
+            c_un = unterminated(b["stages"]["reason"], c_emits)
             meta[(reasoner, c["id"])] = dict(
                 actual_unterminated=a_un, control_unterminated=c_un,
                 closed_pair=not (a_un or c_un),

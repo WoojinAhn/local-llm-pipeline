@@ -18,8 +18,11 @@ The KO2EN stage is never re-called; its text is copied from the production artif
 purely for the record.
 
 Design constraints enforced in code, not by convention:
-  - clean questions carry no canonical person name, in Hangul or romanized (verified at
-    load; see check_no_leakage)
+  - clean questions carry no canonical person name, in Hangul, in any listed conventional
+    alias, or in Revised Romanization across spacing and hyphenation (verified at load;
+    see check_no_leakage). Romanizations that are not RR-derived — McCune-Reischauer
+    "Sin Suk-chu" for 신숙주, say — are covered only by CONVENTIONAL_ALIASES, which is
+    hand-maintained; check_alias_coverage proves it is non-empty per person, not complete.
   - both reasoners receive a byte-identical system+user prompt per case, recorded as
     prompt_sha256_16
   - production profile only (reason 4000 / translate 2000)
@@ -59,7 +62,7 @@ sys.path.insert(0, HERE)
 
 import run as R  # reuse call/save/env_metadata/profiles; importing loads no model
 from canonical_aliases import (CONVENTIONAL_ALIASES, contains_alias,
-                               flat_letters as _flat, romanize)
+                               flat_letters as _flat, romanize, romanize_spaced)
 
 EXPERIMENT = "control-clean-english"
 PROFILE = "production"
@@ -113,7 +116,9 @@ def check_no_leakage(cases, questions):
                 if contains_alias(q, alias):
                     problems.append((c["id"], f"conventional alias {e} -> {alias!r}"))
             rom = romanize(e)
-            if len(rom) >= 5 and contains_alias(q, rom):
+            # Spaced so syllables match across spacing and hyphenation; the length floor
+            # stays on the fused form, keeping very short names (이익 -> "iik") out.
+            if len(rom) >= 5 and contains_alias(q, romanize_spaced(e)):
                 problems.append((c["id"], f"mechanical romanization {e} ({rom})"))
     return problems
 
