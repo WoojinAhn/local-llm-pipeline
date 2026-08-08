@@ -19,7 +19,8 @@ For each reasoner x case x canonical person:
 
 Q is deliberately not a transition axis. Both arms are constant zero: the control by
 construction (the leakage guard rejects any clean question containing an answer) and the
-actual arm because the Korean questions never named these people either. It is verified
+actual arm because its KO->EN question text never named these people either — that stage
+output is what is checked, not the original Korean query. It is verified
 as a guard and reported as such, never as a stage that lost anything.
 
 Two aggregates are reported, and they must not be mixed:
@@ -211,7 +212,7 @@ def main():
     print("\n[0] Q guard — not a transition axis")
     aq, cq = sum(r["aQ"] for r in rows), sum(r["cQ"] for r in rows)
     print(f"  control Q = {cq}/{len(rows)} (leakage guard)")
-    print(f"  actual  Q = {aq}/{len(rows)} (Korean questions never named these people)")
+    print(f"  actual  Q = {aq}/{len(rows)} (KO->EN question text never named these people)")
     if aq or cq:
         raise SystemExit("Q is non-zero; the leakage guard or the case set changed")
     print("  both constant zero -> Q carries no signal and is not aggregated")
