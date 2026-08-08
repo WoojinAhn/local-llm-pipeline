@@ -28,8 +28,14 @@ from collections import Counter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# A missing surname fails silently: the extractor raises nothing, the name is simply
+# never a candidate. test_score.py sweeps this against cases.jsonl so a new canonical
+# entry with an unlisted surname breaks a test instead of going quietly invisible. 민/원
+# were found missing that way — 원균's corruption 원경 sits in a committed artifact and
+# was unreachable. #55
 SURNAMES = ("김이박최정강조윤장임한오서신권황안송류유전홍고문양손배백허남심노하"
-            "곽성차주우구석선설마길연방위표명기반왕금옥육인맹제모탁국여진어편봉대걸")
+            "곽성차주우구석선설마길연방위표명기반왕금옥육인맹제모탁국여진어편봉대걸"
+            "민원")
 # Inflectional endings — a Korean given name never ends in these.
 ENDINGS = set("을를이가은는의에서로와과도만고며여다한할함들적성화기인된대라며야죠음임든지네요")
 STOPWORDS = {
@@ -40,6 +46,10 @@ STOPWORDS = {
     "농업", "토지", "군사", "국방", "외교", "재정", "세금", "신분제", "훈구파", "사림파", "북학파",
     "개화파", "실학", "정음", "이두", "표기", "연구", "학파", "계열", "중인", "상민", "천민",
     "방법론", "정통성", "연대기", "왕조사", "편찬자", "표기법", "문화권", "한국어", "국학의",
+    # Admitting 민/원 as surnames (#55) also admits these ordinary words. Observed in the
+    # committed artifacts, not guessed.
+    "민간", "민담", "민병", "민속", "민족", "민중", "원래", "원리", "원본", "원산", "원천",
+    "원칙", "원주민",
 }
 BOLD = re.compile(r"\*\*([가-힣]{2,4})\*\*")
 GLOSS = re.compile(r"([가-힣]{2,4})\s*\(\s*[一-鿿]{2,4}\s*\)")
