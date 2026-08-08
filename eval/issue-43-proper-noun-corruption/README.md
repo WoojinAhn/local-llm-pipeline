@@ -21,6 +21,9 @@ regression-tested rather than assumed to work.
 | `canonical_aliases.py` | Canonical alias data and the boundary-aware matcher, shared by the control harness and the analyzer. |
 | `annotations.jsonl` | Human verdicts on entities the models produced. |
 | `outputs/` | Raw run records. |
+| `test_score.py` | Scorer: canonical matching, the homograph deny-list, candidate extraction. All three suites load no model. |
+| `test_control_preflight.py` | Control harness: call budget, leakage guard, resume and provenance refusals. |
+| `test_transitions.py` | Alias matcher and analyzer aggregates, checked against the committed artifacts. |
 
 ## The two metrics are not interchangeable
 
