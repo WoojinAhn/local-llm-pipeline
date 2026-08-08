@@ -246,6 +246,17 @@ from `7aeb6d9` and the current scorer on the unchanged JSON produced 15→16 for
 and 9→12 for Qwen3.6. The difference comes from `def8942`, which admits attached Korean
 particles and titles in canonical matching; it is not a generation improvement.
 
+Five canonical entries are excluded from the particle rule and match only bare or with a
+title (`score.PARTICLE_AMBIGUOUS`, #48): `이익` also means "profit", `심정` "feelings",
+`인종` "race", `정선` is a county and "carefully selected", and `황진` + the subject
+particle 이 spells `황진이`, the poet — a different real person. The rule costs nothing
+on these runs, since each of them is also named bare in the same answer, and it gives up
+the general's own subject form `황진이` because that string is genuinely ambiguous.
+
+It does not cover bare-string homonyms. `최항` is both the Goryeo military ruler 崔沆 and
+the Joseon Hall-of-Worthies scholar 崔恒; no surface rule separates them, so a model that
+confuses the two still scores a hit. `test_score.py` pins this rather than hiding it.
+
 ### Candidate vs production, same configurations
 
 | Configuration | Profile | Recall | Avg latency (Korea) |
