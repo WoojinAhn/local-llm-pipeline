@@ -23,6 +23,11 @@ Design constraints enforced in code, not by convention:
   - both reasoners receive a byte-identical system+user prompt per case, recorded as
     prompt_sha256_16
   - production profile only (reason 4000 / translate 2000)
+  - `retokenized_near_limit` on each stage records whether len(tokenizer.encode(raw))
+    reached that limit. It is an indicator, not a stop reason: the harness never
+    captures why generation ended, and re-encoding decoded text need not reproduce the
+    original count. An earlier name for this field asserted a stop reason and read
+    False on a reason block that had in fact exhausted its budget without closing.
   - every call is stateless: each request is a fresh two-message exchange (system +
     user) with no accumulated history and no prompt cache reuse. Models are loaded once
     per phase for speed — statelessness comes from the messages, not from reloading.
@@ -53,6 +58,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import run as R  # reuse call/save/env_metadata/profiles; importing loads no model
+from canonical_aliases import (CONVENTIONAL_ALIASES, contains_alias,
+                               flat_letters as _flat, romanize)
 
 EXPERIMENT = "control-clean-english"
 PROFILE = "production"
@@ -60,68 +67,13 @@ REASONERS = ("three-stage-gpt-oss", "three-stage-qwen36")
 SOURCE_TAG = "run-search-off-production.json"
 EXPECTED_CALLS = 24
 
-# Conventional romanizations for all 42 canonical people. Mechanical Revised
-# Romanization is not enough on its own: it yields "I Sunsin" and "Gim Busik" while the
-# forms that would actually leak an answer are "Yi Sun-sin" and "Kim Bu-sik". Both checks
-# run; this table is the binding one.
-CONVENTIONAL_ALIASES = {
-    "유형원": ["Yu Hyeong-won", "Yu Hyongwon", "Ryu Hyongwon"],
-    "이익": ["Yi Ik", "Lee Ik", "I Ik"],
-    "박지원": ["Park Ji-won", "Pak Chiwon", "Bak Jiwon"],
-    "박제가": ["Park Je-ga", "Pak Chega", "Bak Jega"],
-    "홍대용": ["Hong Dae-yong", "Hong Taeyong"],
-    "정약용": ["Jeong Yak-yong", "Chong Yagyong", "Jung Yakyong", "Dasan"],
-    "유득공": ["Yu Deuk-gong", "Yu Tukkong"],
-    "이덕무": ["Yi Deok-mu", "Lee Deokmu", "Yi Tongmu"],
-    "김정희": ["Kim Jeong-hui", "Kim Jung-hee", "Kim Chonghui", "Chusa"],
-    "세종": ["Sejong", "King Sejong", "Sejong the Great"],
-    "정인지": ["Jeong In-ji", "Chong Inji"],
-    "신숙주": ["Shin Suk-ju", "Sin Sukchu", "Shin Sukju"],
-    "성삼문": ["Seong Sam-mun", "Song Sammun", "Sung Sammun"],
-    "최항": ["Choe Hang", "Choi Hang"],
-    "박팽년": ["Park Paeng-nyeon", "Pak Paengnyon"],
-    "최만리": ["Choe Man-ri", "Choi Man-ri", "Choi Mal-li", "Choe Malli"],
-    "정창손": ["Jeong Chang-son", "Chong Changson"],
-    "이순신": ["Yi Sun-sin", "Yi Sun-shin", "Lee Sun-shin", "Yi Sunshin"],
-    "원균": ["Won Gyun", "Weon Gyun", "Won Kyun"],
-    "권율": ["Gwon Yul", "Kwon Yul", "Kwon Yool"],
-    "이억기": ["Yi Eok-gi", "Lee Eok-gi", "Yi Okki"],
-    "정운": ["Jeong Un", "Chong Un", "Jung Woon"],
-    "황진": ["Hwang Jin", "Hwang Chin"],
-    "김종직": ["Kim Jong-jik", "Kim Chongjik"],
-    "조광조": ["Jo Gwang-jo", "Cho Kwang-jo", "Jo Gwangjo"],
-    "김일손": ["Kim Il-son", "Kim Ilson"],
-    "유자광": ["Yu Ja-gwang", "Yu Chagwang", "Ryu Jagwang"],
-    "남곤": ["Nam Gon", "Nam Kon"],
-    "심정": ["Sim Jeong", "Shim Jung", "Sim Chong"],
-    "연산군": ["Yeonsangun", "Yonsangun", "Yeonsan-gun", "Prince Yeonsan"],
-    "중종": ["Jungjong", "Chungjong", "King Jungjong"],
-    "김부식": ["Kim Bu-sik", "Kim Busik", "Kim Pusik"],
-    "일연": ["Ilyeon", "Iryeon", "Il-yeon"],
-    "인종": ["Injong", "King Injong"],
-    "각훈": ["Gakhun", "Kakhun", "Gak-hun"],
-    "김옥균": ["Kim Ok-gyun", "Kim Okkyun"],
-    "박영효": ["Park Yeong-hyo", "Pak Yonghyo", "Park Young-hyo"],
-    "홍영식": ["Hong Yeong-sik", "Hong Yongsik"],
-    "서광범": ["Seo Gwang-beom", "So Kwangbom"],
-    "서재필": ["Seo Jae-pil", "So Chaepil", "Philip Jaisohn"],
-    "민영익": ["Min Yeong-ik", "Min Yongik"],
-    "고종": ["Gojong", "Kojong", "King Gojong", "Emperor Gojong"],
-}
-
-# Mechanical Revised Romanization, kept as a second net under the table above.
-_I = ['g','kk','n','d','tt','r','m','b','pp','s','ss','','j','jj','ch','k','t','p','h']
-_V = ['a','ae','ya','yae','eo','e','yeo','ye','o','wa','wae','oe','yo','u','wo','we','wi','yu','eu','ui','i']
-_F = ['','k','k','k','n','n','n','t','l','l','l','l','l','l','l','l','m','p','p','t','t','ng','t','t','k','t','p','t']
-
-
-def romanize(s):
-    out = []
-    for ch in s:
-        c = ord(ch) - 0xAC00
-        out.append(_I[c // 588] + _V[(c % 588) // 28] + _F[c % 28] if 0 <= c < 11172 else ch)
-    return "".join(out)
-
+# 1 = alias table inlined in this script, so script_sha256_16 covered it.
+# 2 = alias table lives in canonical_aliases.py and is hashed separately.
+# Records written under schema 1 cannot be upgraded: the hash that would prove which
+# alias table they used is the old script hash, and that script no longer exists on
+# disk. Backfilling today's aliases_sha256_16 would assert something unverified, so a
+# schema-1 record is refused with an explanation instead.
+CONFIG_DETAIL_SCHEMA = 2
 
 def load_cases():
     cases = [json.loads(l) for l in open(f"{HERE}/cases.jsonl") if l.strip()]
@@ -131,10 +83,6 @@ def load_cases():
 def load_questions():
     return {r["id"]: r["question"]
             for r in (json.loads(l) for l in open(f"{HERE}/control_questions.jsonl") if l.strip())}
-
-
-def _flat(s):
-    return re.sub(r"[^a-z]", "", s.lower())
 
 
 def check_alias_coverage(cases):
@@ -153,17 +101,16 @@ def check_no_leakage(cases, questions):
     all_people = {e for c in cases for e in c["canonical_people"]}
     for c in cases:
         q = questions[c["id"]]
-        flat = _flat(q)
         if any("가" <= ch <= "힣" for ch in q):
             problems.append((c["id"], "contains Hangul"))
         for e in sorted(all_people):
             if e in q:
                 problems.append((c["id"], f"canonical name {e}"))
             for alias in CONVENTIONAL_ALIASES.get(e, []):
-                if _flat(alias) and _flat(alias) in flat:
+                if contains_alias(q, alias):
                     problems.append((c["id"], f"conventional alias {e} -> {alias!r}"))
             rom = romanize(e)
-            if len(rom) >= 5 and rom.lower() in flat:
+            if len(rom) >= 5 and contains_alias(q, rom):
                 problems.append((c["id"], f"mechanical romanization {e} ({rom})"))
     return problems
 
@@ -231,12 +178,14 @@ def build_config_detail(reasoner):
     """Provenance that must match for a resume to be allowed.
 
     run.RESUME_KEYS covers search/profile/generation/prompts hashes but knows nothing
-    about this experiment's own inputs, so the script and the question set are carried
-    here — check_resumable compares config_detail as a whole.
+    about this experiment's own inputs, so the script, alias data and question set are
+    carried here — check_resumable compares config_detail as a whole.
     """
     return dict(experiment=EXPERIMENT, reasoner=reasoner, profile=PROFILE,
+                config_detail_schema=CONFIG_DETAIL_SCHEMA,
                 source_tag=SOURCE_TAG,
                 script_sha256_16=file_sha16(f"{HERE}/control_clean_english.py"),
+                aliases_sha256_16=file_sha16(f"{HERE}/canonical_aliases.py"),
                 questions_sha256_16=file_sha16(f"{HERE}/control_questions.jsonl"))
 
 
@@ -252,6 +201,19 @@ def init_payloads(env, resume):
         d = dest_path(name)
         cd = build_config_detail(name)
         if os.path.exists(d):
+            if resume:
+                prev = json.load(open(d)).get("config_detail", {})
+                if prev and prev.get("config_detail_schema") != CONFIG_DETAIL_SCHEMA:
+                    raise SystemExit(
+                        f"{os.path.relpath(d, HERE)} was written under config_detail "
+                        f"schema {prev.get('config_detail_schema', 1)}; this script writes "
+                        f"schema {CONFIG_DETAIL_SCHEMA}.\n"
+                        "    Schema 1 inlined the alias table in the script, so its "
+                        "script_sha256_16 covered the aliases; schema 2 hashes\n"
+                        "    canonical_aliases.py separately. The schema-1 hash cannot be "
+                        "re-derived, so resuming would silently mix\n"
+                        "    two different alias tables. If the run is already complete no "
+                        "resume is needed; otherwise start a fresh run.")
             if not resume:
                 raise SystemExit(
                     f"refusing to overwrite {os.path.relpath(d, HERE)}\n"
@@ -341,7 +303,7 @@ def main():
         for r in todo:
             s = R.call(m, t, R.prompts.REASONER_SYSTEM, r["question"],
                        R.GEN["reason_max_tokens"], thinking=cfg.get("reasoner_thinking"))
-            s["stopped_at_cap"] = s["tokens"] >= R.GEN["reason_max_tokens"]
+            s["retokenized_near_limit"] = s["tokens"] >= R.GEN["reason_max_tokens"]
             payloads[name]["results"].append(dict(
                 id=r["id"], reasoner=name, model_id=cfg["reasoner"],
                 prompt_sha256_16=r["prompt_sha256_16"], clean_question=r["question"],
@@ -349,7 +311,7 @@ def main():
                 stages=dict(reason=s)))
             R.save(dest_path(name), payloads[name])
             print(f"  reason {r['id']} {name}: {s['secs']}s "
-                  f"{'[CAP]' if s['stopped_at_cap'] else ''}"
+                  f"{'[NEAR-LIMIT]' if s['retokenized_near_limit'] else ''}"
                   f"{' [UNTERMINATED]' if s['unterminated_think'] else ''}", flush=True)
         del m
 
@@ -361,13 +323,13 @@ def main():
         for name, r in todo:
             s = R.call(m, t, R.prompts.TRANSLATE_EN_TO_KO, r["stages"]["reason"]["text"],
                        R.GEN["translate_max_tokens"], thinking=False)
-            s["stopped_at_cap"] = s["tokens"] >= R.GEN["translate_max_tokens"]
+            s["retokenized_near_limit"] = s["tokens"] >= R.GEN["translate_max_tokens"]
             r["stages"]["en2ko"] = s
             r["final"] = s["text"]
             r["total_secs"] = round(r["stages"]["reason"]["secs"] + s["secs"], 2)
             R.save(dest_path(name), payloads[name])
             print(f"  en2ko  {r['id']} {name}: {s['secs']}s "
-                  f"{'[CAP]' if s['stopped_at_cap'] else ''}", flush=True)
+                  f"{'[NEAR-LIMIT]' if s['retokenized_near_limit'] else ''}", flush=True)
     for name in REASONERS:
         d = dest_path(name)
         print(f"wrote {os.path.relpath(d, HERE) if d.startswith(HERE) else d}")
