@@ -106,8 +106,8 @@ The pipelines themselves have no test suite — verify changes by running the re
 
 ## Backlog (tracked as issues)
 
-- Korea-domain routing around the translation wrapper — #44, blocked on #40 for memory headroom.
-- Reasoner swap to Qwen3.6-35B-A3B — #40. Memory 65.9GB → 19.7GB; speed roughly neutral once thinking tokens are counted, and it *lowers* Korean recall, so it is not a free win.
+- Korea-domain routing around the translation wrapper — #44, blocked on #40 for memory headroom. The recall table in #44's body is stale (it predates the scorer fixes) and overstates the gap ~4x; corrected in a comment there — at the same profile it is EXAONE 25/42 vs 3-stage+gpt-oss 17/42, not 16/43 vs 4/43. Its "reasoner-independent" claim is also wrong; degree differs (gpt-oss 17 vs Qwen3.6 12).
+- Reasoner swap to Qwen3.6-35B-A3B — #40. Memory 65.9GB → 19.7GB; speed roughly neutral once thinking tokens are counted, and it *lowers* Korean recall, so it is not a free win. The spike is measured and closed out in a comment; the issue stays open as the tracker for the swap itself, which #44's memory budget depends on.
 - mlx-vlm 0.5.0 → 0.6.10 — #42. Independent of the above.
 - Speculative decoding for the GPT-OSS reasoner (gpt-oss-20b draft) — #35.
 - KV cache quantization (`kv_bits`) for GPT-OSS long-session memory pressure — #39.
