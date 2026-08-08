@@ -261,14 +261,20 @@ The candidate extractor takes the mirror of the particle rule (#46). `def8942` t
 recall to read 신석주**가** but left `extract_people` rejecting it on the `ENDINGS` check,
 so the two metrics biased in opposite directions — recall counted more names while the
 fabrication side went blind to the same attached form. A token that fails as written is
-now retried with one suffix removed. Over the committed artifacts this adds 78
-outside-canonical candidates to 1568 (+5%) and newly surfaces `김용복`, `박희숙`, `왕양명`,
-`이재경`, `홍경래` — the invented-name shape the eval exists to catch. Two guards keep it
-from flooding the annotation queue: the stripped form must be three syllables (at two it
-is ordinary vocabulary — 구조, 문제, 왕조) and must not end in a verb-stem syllable
-(유지**하**, 강요**받**). Without them the same five names arrive with 615 extra
-candidates instead of 78. Recall is untouched: `extract_people` never feeds a recall
-figure.
+now retried with one suffix removed, and `PLAIN_SUFFIXED` captures the suffix as its own
+group so it does not eat the name's syllable budget. That second part matters more than
+it looks: the plain pattern caps a token at four syllables, so a 3-syllable name carrying
+a 2-syllable suffix never reached the extractor at all — 17 of the 37 declared titles and
+particles were unreachable, and `신석주에게` surfaced only the unrelated `전달했다`.
+
+Over the committed artifacts this adds 93 outside-canonical candidates to 1568 (+6%) and
+newly surfaces `김용복`, `박희숙`, `왕양명`, `이재경`, `홍경래`, `명성황후`, `인목대비`,
+`고바야카`, `유키나` — the invented- and foreign-name shapes the eval exists to catch. Two
+guards keep it from flooding the annotation queue: a separated token must be three
+syllables (at two it is ordinary vocabulary — 구조, 문제, 왕조) and must not end in a
+verb-stem syllable (유지**하**, 강요**받**, 전복하**려**). Without them the same nine names
+arrive with several hundred extra candidates. Recall is untouched: `extract_people` never
+feeds a recall figure.
 
 ### Candidate vs production, same configurations
 
