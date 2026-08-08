@@ -36,7 +36,13 @@ python3 multimodal.py --text-only "..."          # no image
 python3 llm-pipeline.py
 ```
 
-No test suite. Verify changes by running the relevant pipeline and inspecting output (Korean cleanliness, search injection, channel filtering).
+The pipelines themselves have no test suite — verify changes by running the relevant one and inspecting output (Korean cleanliness, search injection, channel filtering). The eval harness under `eval/issue-43-proper-noun-corruption/` does have tests; run them there, they load no model:
+
+```bash
+python eval/issue-43-proper-noun-corruption/test_score.py             # scorer
+python eval/issue-43-proper-noun-corruption/test_control_preflight.py # control harness
+python eval/issue-43-proper-noun-corruption/test_transitions.py       # alias matcher + analyzer
+```
 
 ## Setup / Environment
 
@@ -89,14 +95,23 @@ No test suite. Verify changes by running the relevant pipeline and inspecting ou
 - **GPT-OSS is not Korean-native** → the 3-stage translation wrapper is required, not optional.
 - **Reasoner ignores Korean search results** → always translate Korean results to English before injecting.
 - **Reasoner speculates without search** on factual queries → web search integration is the fix.
-- **Qwen Hanja contamination**: Qwen3-14B 4-bit clean (0/10 tested); larger Qwen mix Hanja — Qwen3.5-27B 4-bit mixed Chinese idioms, Qwen3.6-27B substitutes raw Hanja mid-word (rejected as Gemma replacement, #34). Re-test any Qwen swap.
+- **Qwen Hanja contamination**: Qwen3-14B 4-bit clean (0/10 tested); larger Qwen mix Hanja — Qwen3.5-27B 4-bit mixed Chinese idioms, Qwen3.6-27B substitutes raw Hanja mid-word (rejected as Gemma replacement, #34). Re-test any Qwen swap. This rules Qwen3.6 out of Korean-facing slots only. #34's other blocker — mlx-lm being unable to load `qwen3_5_text` — is gone: 0.31.3 ships `qwen3_5`/`qwen3_5_moe` and loads them, so Qwen3.6-35B-A3B is live as an English-only reasoner (#40).
+- **Translation round-trip fabricates Korean proper nouns**: KO→EN→analysis→EN→KO invents plausible historical figures (신숙주→신석주, 원균→원경, plus wholly invented names with dates). Reasoner-independent in direction but not in degree, and a clean-English control recovers part of it — measured in #43, harness under `eval/issue-43-proper-noun-corruption/`. Do not treat Korea-domain answers from the 3-stage path as reliable.
 - **GPT-OSS long-context memory pressure**: ~65GB weights + KV cache can strain 128GB on long sessions.
 - **mlx-lm has `gemma4_text` (text only)**; Gemma 4 multimodal still needs mlx-vlm.
+- **mlx-vlm is pinned far behind**: 0.5.0 carries 59 architecture packages, main/0.6.10 carries 168. `deepseek_v4`, `kimi_k3`, `minimax_m3`, `solar_open` exist only upstream, so "MLX cannot load X" is worth re-checking against the current release before believing it (#42).
+- **EXAONE-4.0-32B will not load unpatched**: its `sliding_window_pattern` is `"LLLG"`, which mlx-lm indexes as a string while transformers 5.9.0 applies integer modulo to it. Patch the cached config to keep the string and pin `layer_types` explicitly — procedure in the #43 harness README.
+- **Stage `tokens` in eval artifacts is `len(tokenizer.encode(raw))` recorded after generation**, not a generation counter and not a stop reason. A value at the limit indicates probable budget exhaustion; re-encoding decoded text need not reproduce the original count (one record retokenizes to 4001 against a 4000 limit).
 - **LM Studio CLI (`lms`)** not on PATH: `/Applications/LM Studio.app/Contents/Resources/app/.webpack/lms`.
 
 ## Backlog (tracked as issues)
 
+- Korea-domain routing around the translation wrapper — #44, blocked on #40 for memory headroom.
+- Reasoner swap to Qwen3.6-35B-A3B — #40. Memory 65.9GB → 19.7GB; speed roughly neutral once thinking tokens are counted, and it *lowers* Korean recall, so it is not a free win.
+- mlx-vlm 0.5.0 → 0.6.10 — #42. Independent of the above.
 - Speculative decoding for the GPT-OSS reasoner (gpt-oss-20b draft) — #35.
 - KV cache quantization (`kv_bits`) for GPT-OSS long-session memory pressure — #39.
-- Hunyuan-MT 7B (WMT25 #1) as a translation-stage upgrade candidate.
+- Hy-MT2 (Tencent, WMT lineage; supersedes the earlier Hunyuan-MT 7B note) as a translation-stage candidate. Not a drop-in: the current Qwen3-14B slot also does the `SEARCH:yes/no` judgment, which a dedicated MT model cannot.
 - Result-to-file save option; streaming translation output; Textual TUI — #8.
+- Parked: DeepSeek V4 Flash at 2.4-bit — #41. Fits 92.8GB but needs the mlx-vlm path and the quant is unvalidated.
+- Closed as infeasible: GLM-5.2 (#38) — 395GB at mxfp4, no quantization path fits 128GB.
