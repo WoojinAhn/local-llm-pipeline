@@ -64,6 +64,7 @@ described as "4x less corruption", which the data does not support.
 
 ```bash
 cd eval/issue-43-proper-noun-corruption
+source ../../.venv/bin/activate    # or use ../../.venv/bin/python below; `python` is not on PATH otherwise
 python run.py three-stage-gpt-oss                             # search off, candidate profile
 python run.py three-stage-qwen36 --profile production         # production token limits
 python run.py single-exaone --search parity --profile production    # settings only
