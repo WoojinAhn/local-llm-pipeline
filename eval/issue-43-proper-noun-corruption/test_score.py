@@ -10,7 +10,8 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from score import find_canonical
 
-CANON = ["세종", "성삼문", "김종직", "연산군", "이익", "김부식", "정약용", "원균"]
+CANON = ["세종", "성삼문", "김종직", "연산군", "이익", "김부식", "정약용", "원균",
+         "황진", "심정", "인종", "최항"]
 
 # (text, expected matches, why)
 CASES = [
@@ -30,6 +31,27 @@ CASES = [
     ("박영호가 참여했다", set(), "unrelated surface form"),
     ("세종실록에 기록되어", set(), "실록 is not a particle or title — compound work name"),
     ("원균형제", set(), "형제 is not in the suffix list"),
+
+    # --- PARTICLE_AMBIGUOUS: the particle form is not attributable (#48) ---
+    ("**황진이**, **유자광**", set(), "황진이 is the poet, a different real person"),
+    ("백성의 이익을 위해", set(), "이익 here is the common noun 'profit'"),
+    ("학자들의 심정을 이해", set(), "심정 here is the common noun 'feelings'"),
+    ("다양한 인종이 공존했다", set(), "인종 here is the common noun 'race'"),
+    # ...but the bare and title-bearing forms still count for the same entities
+    ("**이익 (1681-1764)**", {"이익"}, "bare name with dates"),
+    ("이익(영남 학파)", {"이익"}, "bare name, parenthetical gloss"),
+    ("인종(재위 1122-1146)은 왕권을", {"인종"}, "bare name, reign dates"),
+    ("황진 장군이 진주성을 지켰다", {"황진"}, "title 장군 still attaches"),
+    ("황진, 이억기, 정운", {"황진"}, "bare name in a list"),
+    # The cost of the rule, pinned so it is not mistaken for a bug later: the general's
+    # own subject form is 황진이, indistinguishable from the poet, so it is given up.
+    ("황진이 이끄는 부대가 진주성을 지켰다", set(),
+     "genuine 황진 + subject 이 is sacrificed — same string as the poet"),
+    # A bare-string homonym is out of reach of any suffix rule, and the deny-list must
+    # not be described as covering it: the Goryeo ruler 崔沆 scores as the Joseon
+    # scholar 崔恒 either way. Pinned so the limitation stays visible.
+    ("최항이 무신정권을 장악했다", {"최항"}, "era confusion still scores — 崔沆 vs 崔恒"),
+    ("최항, 집현전 학자", {"최항"}, "bare 최항 counts, as it must"),
 
     # --- unchanged behaviour ---
     ("이순신과 원균", {"원균"}, "plain particle case, 이순신 not in CANON"),

@@ -66,6 +66,25 @@ def _alt(words):
 # A title and a particle stack: 세종대왕의. Both optional, and a non-Hangul boundary is
 # still required after them.
 NAME_SUFFIX = rf"(?:{_alt(TITLES)})?(?:{_alt(PARTICLES)})?"
+TITLE_SUFFIX = rf"(?:{_alt(TITLES)})?"
+
+# Canonical entries whose spelling is also ordinary vocabulary, or becomes a different
+# real person once a particle attaches. A particle-suffixed match cannot be told apart
+# from 이익 "profit", 심정 "feelings", 인종 "race", 정선 (Jeongseon county / 精選), or from
+# the poet 황진이 — 황진 ends in a consonant, so 이 is the only correct subject particle
+# and "황진이" is exactly the poet's name. For these, only the bare or title-bearing form
+# counts. This costs no recall on the committed runs: each of them is also named bare in
+# the same answer, verified before the rule was added.
+#
+# Deliberately not a general fix. 최항 is a bare-string homonym — the Goryeo military
+# ruler 崔沆 and the Joseon Hall-of-Worthies scholar 崔恒 — and no surface rule separates
+# those, so era confusion still scores as a hit.
+PARTICLE_AMBIGUOUS = frozenset({"이익", "심정", "인종", "정선", "황진"})
+
+
+def canonical_pattern(entity):
+    suffix = TITLE_SUFFIX if entity in PARTICLE_AMBIGUOUS else NAME_SUFFIX
+    return rf"(?<![가-힣]){re.escape(entity)}{suffix}(?![가-힣])"
 
 
 def plausible_name(tok):
@@ -90,9 +109,12 @@ def find_canonical(text, canon):
     title (see NAME_SUFFIX). Requiring a bare non-Hangul boundary rejected
     성삼문과, 김종직의 and 세종대왕, and it did so unevenly across configurations,
     so the gap between them was overstated as well as the absolute numbers.
+
+    Entities in PARTICLE_AMBIGUOUS take the title-only suffix instead: for those
+    the particle form is indistinguishable from ordinary vocabulary or from a
+    different real person.
     """
-    return {e for e in canon
-            if re.search(rf"(?<![가-힣]){re.escape(e)}{NAME_SUFFIX}(?![가-힣])", text)}
+    return {e for e in canon if re.search(canonical_pattern(e), text)}
 
 
 def extract_people(text):
