@@ -15,6 +15,10 @@ regression-tested rather than assumed to work.
 | `run.py` | Runs a configuration, capturing **every stage** and full environment metadata. |
 | `score.py` | Canonical recall (automatic) + entity validity (annotation-driven). |
 | `isolate.py` | Three controlled experiments separating translation / reasoner / back-translation. |
+| `control_questions.jsonl` | Hand-written English questions with the same intent and no canonical-name leakage. |
+| `control_clean_english.py` | Runs the clean-English reasoner + back-translation control at production limits. |
+| `analyze_transitions.py` | Compares per-person reasoner (R) to final translation (T) transitions without model calls. |
+| `canonical_aliases.py` | Canonical alias data and the boundary-aware matcher, shared by the control harness and the analyzer. |
 | `annotations.jsonl` | Human verdicts on entities the models produced. |
 | `outputs/` | Raw run records. |
 
@@ -66,6 +70,11 @@ python run.py single-exaone --search parity --profile production    # settings o
 python run.py three-stage-gpt-oss --resume                    # continue an interrupted run
 python score.py                                               # default tag
 python score.py --tag search-parity-production
+python control_clean_english.py --dry-run                     # 24-call matrix, no model load
+python control_clean_english.py                               # clean-English control
+python control_clean_english.py --resume                      # resume an interrupted current-schema run
+python score.py --tag control-clean-english-production
+python analyze_transitions.py                                 # read-only R -> T analysis
 
 # entities needing a verdict
 python score.py --candidates three-stage-gpt-oss >> annotations.jsonl
@@ -98,10 +107,17 @@ retroactively rewritten.
 
 Long runs save after every case (atomic replace) and support `--resume`, so an
 interrupted multi-hour run is not lost. `--resume` refuses to append when
-`config_detail`, `search`, `profile`, `harness_sha256_16` or `prompts_sha256_16` differ
+`config_detail`, `search`, `profile`, `generation_sha256_16` or `prompts_sha256_16` differ
 from the existing file, so results from different code never mix into one record.
 
-## Isolating the damage stage — still open
+The committed clean-control outputs are complete legacy schema-1 records. At generation
+time the alias table lived inside `control_clean_english.py`, so the recorded script hash
+covered it. They must not be resumed with the schema-2 harness or backfilled with the
+current alias-file hash. Their raw stage records also retain a legacy `stopped_at_cap`
+field derived from post-generation retokenization; it is not a recorded stop reason and
+must not be interpreted as one. Current runs write `retokenized_near_limit` instead.
+
+## Isolating the damage stage
 
 Observational runs establish the defect is **reasoner-independent**: two different
 reasoners scored identically while the wrapper-free path scored roughly 4x higher (v1
@@ -118,7 +134,9 @@ python isolate.py b   # correct English -> KO only
 python isolate.py c   # fixed English Q, both reasoners
 ```
 
-Not yet run.
+Experiments A-C have not yet been run. The separate clean-English control described
+below has run; it holds the reasoner prompt intent constant without handing the model
+any canonical names.
 
 Experiment A is a **necessary, not sufficient** check on the translator: names surviving
 a newline-separated list does not clear translation, because names in running prose carry
@@ -206,24 +224,30 @@ intermediates and cannot support stage-level analysis.
 Same harness and case set as v2, with `--profile production` (translate 2000 / reason
 4000, the limits `mlx-pipeline.py` uses). Denominator 42 canonical entities over 6
 Korea-domain cases; both configurations completed all 9 non-holdout cases with
-`source_dirty=false`, generation hash `f0fad4af3d93f000`.
+`source_dirty=false`, generation hash `f0fad4af3d93f000`. The figures below use the
+suffix-aware scorer at scoring hash `677a4d573089930e`.
 
 | Configuration | Recall | Miss rate | Avg latency (Korea) |
 |---|---|---|---|
-| `three-stage-gpt-oss` | 15/42 (35.7%) | 27/42 (64.3%) | 79.5 s |
-| `three-stage-qwen36` | 9/42 (21.4%) | 33/42 (78.6%) | 68.1 s |
+| `three-stage-gpt-oss` | 16/42 (38.1%) | 26/42 (61.9%) | 79.5 s |
+| `three-stage-qwen36` | 12/42 (28.6%) | 30/42 (71.4%) | 68.1 s |
+
+These same raw artifacts previously scored 15/42 and 9/42. An A/B using the scorer
+from `7aeb6d9` and the current scorer on the unchanged JSON produced 15→16 for gpt-oss
+and 9→12 for Qwen3.6. The difference comes from `def8942`, which admits attached Korean
+particles and titles in canonical matching; it is not a generation improvement.
 
 ### Candidate vs production, same configurations
 
 | Configuration | Profile | Recall | Avg latency (Korea) |
 |---|---|---|---|
-| `three-stage-gpt-oss` | candidate (4000/8000) | 16/42 (38.1%) | 114.2 s |
-| `three-stage-gpt-oss` | **production (2000/4000)** | **15/42 (35.7%)** | **79.5 s** |
-| `three-stage-qwen36` | candidate (4000/8000) | 9/42 (21.4%) | 76.0 s |
-| `three-stage-qwen36` | **production (2000/4000)** | **9/42 (21.4%)** | **68.1 s** |
+| `three-stage-gpt-oss` | candidate (4000/8000) | 17/42 (40.5%) | 114.2 s |
+| `three-stage-gpt-oss` | **production (2000/4000)** | **16/42 (38.1%)** | **79.5 s** |
+| `three-stage-qwen36` | candidate (4000/8000) | 12/42 (28.6%) | 76.0 s |
+| `three-stage-qwen36` | **production (2000/4000)** | **12/42 (28.6%)** | **68.1 s** |
 
 The shipped limits cost gpt-oss one canonical entity and save 35 s per Korea query.
-Qwen3.6 is unchanged at 9/42 — the extra budget in the candidate profile did not buy it
+Qwen3.6 is unchanged at 12/42 — the extra budget in the candidate profile did not buy it
 any additional Korean proper nouns.
 
 **These runs are `search=off`, so they are neither settings-equivalent nor
@@ -235,19 +259,80 @@ accumulates `_reasoner_history` and reuses `prompt_cache` across turns, while ev
 here runs cold. Read this as a token-budget comparison holding the reasoner axis fixed,
 nothing more.
 
-### Reasoner truncation at the shipped 4000-token limit
+### Clean-English control (`control-clean-english-production`)
+
+The observational arm hands each reasoner the actual KO→EN output. The control replaces
+only that input with a hand-written English question of the same intent, checked to
+contain none of the 42 canonical people, then runs reason + EN→KO at the production
+limits. Six cases × two reasoners × two calls produced exactly 24 calls. Both output
+files record commit `7788e5d`, `source_dirty=false`, and generation hash
+`f0fad4af3d93f000`.
+
+The current scorer gives the following full as-run totals. Its `INCOMPLETE RUN` banner
+for the control files is expected: the 24-call budget covers the six Korea cases but not
+the three `ctl-*` cases. Those omitted cases contain no canonical Korean people, so the
+Korea-case denominator remains 42; `analyze_transitions.py` also reconciles these totals
+directly with `score.py`.
+
+| Reasoner | Actual KO→EN | Clean English | Net |
+|---|---:|---:|---:|
+| gpt-oss | 16/42 (38.1%) | 19/42 (45.2%) | +3 |
+| Qwen3.6 | 12/42 (28.6%) | 15/42 (35.7%) | +3 |
+
+Canonical names are absent from both question arms by design, so Q is a leakage guard,
+not a causal transition axis. The useful transition is R→T: whether the English
+reasoner output names a canonical person, and whether that person survives in the final
+Korean text. R uses the `alias-boundary` matcher: Hangul-boundary canonical names plus
+`CONVENTIONAL_ALIASES` matched as whole names. Alias parts may be joined directly or
+separated by in-name whitespace and at most one hyphen, so `Park Jiwon`, `Park Ji-won`
+and gpt-oss's U+202F and U+2011 forms all match. A word-hyphen extension on either side
+is rejected, so neither `Yi Ik-hwan` nor `Hwan-Yi Ik` counts as `Yi Ik`. T uses
+`score.find_canonical` unchanged.
+
+| Reasoner | Arm | n | R | T | P(T\|R) | T rescue / loss |
+|---|---|---:|---:|---:|---:|---:|
+| gpt-oss | actual | 42 | 19 | 16 | 84.21% | — |
+| gpt-oss | clean control | 42 | 23 | 19 | 82.61% | +7 / −4 |
+| Qwen3.6 | actual | 42 | 19 | 12 | 63.16% | — |
+| Qwen3.6 | clean control | 42 | 19 | 15 | 78.95% | +6 / −3 |
+
+This primary table keeps failures because they are part of the shipped-limit behavior.
+For a symmetric closed-pair sensitivity, the analyzer drops a case from both arms when
+either reason output never closes: Qwen3.6 `ko-03` fails in the actual arm and `ko-04`
+fails in the control. Over the remaining 28 people, Qwen3.6 moves from R=14, T=10
+(71.43%) to R=15, T=12 (80.00%), with T rescue/loss +4/−2. gpt-oss has no unclosed
+reason block, so its sensitivity figures equal the primary table.
+
+The clean question raises gpt-oss reason-stage coverage from 19→23 but leaves Qwen3.6
+unchanged at 19; it changes which Qwen3.6 names appear, with R rescue/loss +5/−5. Final
+recall rises by three for both reasoners, so degraded KO→EN questions contribute to the
+loss, but the effect is not monotonic. Loss also remains after R. For clean-control
+gpt-oss, decoded-text retokenization is at or above the nominal 2000-token EN→KO limit
+on 5/6 cases, while the remaining case ends mid-sentence at 1997. The artifacts do not
+record actual generation token counts or stop reasons, so exact limit incidence cannot be
+established. The clean control therefore narrows the cross-reasoner P(T|R) gap, but the
+small sample, asymmetric model failures, and possible translation truncation do not
+support claiming that the gap disappears or that KO→EN is the only cause.
+
+### Reason blocks at or above the shipped 4000-token limit
 
 Evidence taken from the raw `stages.reason` records, not from the `unterminated_think`
 flag — see the caveat below.
 
-| Configuration | Reason stage at the 4000 cap | Reasoning block left unclosed |
+| Configuration | Reason stage at or above the 4000-token limit (retokenized) | Reasoning block left unclosed |
 |---|---|---|
-| `three-stage-gpt-oss` | 1/9 (`ctl-03`) | 0/9 — `<\|channel\|>final` present in all 9 |
+| `three-stage-gpt-oss` | 1/9 (`ctl-03`) | 0/9 — `<\|channel\|>final<\|message\|>` present in all 9 |
 | `three-stage-qwen36` | 4/9 (`ko-03`, `ko-04`, `ko-06`, `ctl-03`) | **1/9 (`ko-03`)** — no `</think>` |
 
-On `ko-03` (임진왜란) Qwen3.6 spent the whole 4000-token budget reasoning and never
-emitted an answer, so what reached back-translation was raw reasoning presented as
-analysis. That case scored 1/6.
+Token counts are `len(tokenizer.encode(raw))` computed after generation, not the
+generation counter. A value at the limit indicates possible budget exhaustion but does
+not prove it; re-encoding decoded text need not reproduce the original count, and the
+harness records no stop reason.
+
+On `ko-03` (임진왜란) Qwen3.6's reason block reaches 4000 tokens when its decoded text
+is re-encoded, carries no closure marker, and ends mid-word. What reached
+back-translation was therefore raw reasoning presented as analysis, and the case scored
+1/6. Budget exhaustion is the natural reading, but it remains an inference.
 
 **Caveat — `unterminated_think` reports 0/9 for both and is unreliable for Qwen3.6.**
 `has_unterminated_think()` requires a literal `<think>` in the completion, but Qwen3.6's
