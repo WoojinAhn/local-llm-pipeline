@@ -36,12 +36,12 @@ python3 multimodal.py --text-only "..."          # no image
 python3 llm-pipeline.py
 ```
 
-The pipelines themselves have no test suite — verify changes by running the relevant one and inspecting output (Korean cleanliness, search injection, channel filtering). The eval harness under `eval/issue-43-proper-noun-corruption/` does have tests; run them there, they load no model:
+The pipelines themselves have no test suite — verify changes by running the relevant one and inspecting output (Korean cleanliness, search injection, channel filtering). The eval harness under `eval/issue-43-proper-noun-corruption/` does have tests. They load no model, but `test_control_preflight.py` imports `run.py` and therefore needs `mlx` — use the venv interpreter, not the system `python3`:
 
 ```bash
-python3 eval/issue-43-proper-noun-corruption/test_score.py             # scorer
-python3 eval/issue-43-proper-noun-corruption/test_control_preflight.py # control harness
-python3 eval/issue-43-proper-noun-corruption/test_transitions.py       # alias matcher + analyzer
+.venv/bin/python eval/issue-43-proper-noun-corruption/test_score.py             # scorer
+.venv/bin/python eval/issue-43-proper-noun-corruption/test_control_preflight.py # control harness
+.venv/bin/python eval/issue-43-proper-noun-corruption/test_transitions.py       # alias matcher + analyzer
 ```
 
 ## Setup / Environment
