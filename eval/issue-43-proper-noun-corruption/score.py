@@ -92,6 +92,53 @@ def plausible_name(tok):
             and tok[-1] not in ENDINGS and tok[0] in SURNAMES)
 
 
+# Longest first so 에게 is tried before 에, 대왕 before 왕.
+_ATTACHED = tuple(sorted(set(TITLES + PARTICLES), key=len, reverse=True))
+# Stripping a particle off a conjugated verb leaves its stem (유지하는 -> 유지하,
+# 강요받은 -> 강요받). Those start with a surname character often enough to pass
+# plausible_name, and they are the bulk of the noise this path would otherwise add.
+_VERB_STEM_TAIL = frozenset("하되받해")
+# A stripped form must still be a 3-syllable shape. At two it is almost always ordinary
+# vocabulary (구조, 문제, 왕조); measured over the committed artifacts, allowing two
+# syllables added 615 candidates and recovered no additional name.
+_MIN_STRIPPED = 3
+
+
+def strip_attached(tok):
+    """Drop one attached title or particle, leaving at least two syllables."""
+    for suffix in _ATTACHED:
+        if tok.endswith(suffix) and len(tok) - len(suffix) >= 2:
+            return tok[:-len(suffix)]
+    return tok
+
+
+def name_candidate(tok):
+    """The name inside a matched token, or None if it does not look like one.
+
+    The stripped form is tried only when the token as written fails: PLAIN captures
+    신석주가 whole and plausible_name drops it on the ENDINGS check, so the
+    particle-attached fabrications that find_canonical began counting for recall
+    (def8942) stayed invisible on the candidate side — the two metrics biased in
+    opposite directions. Trying the stripped form second leaves every token that already
+    worked byte-identical.
+
+    Tuned against the committed artifacts: this path adds 78 candidates over 1568 (+5%)
+    and newly surfaces 김용복, 박희숙, 왕양명, 이재경, 홍경래 — the invented-name shape
+    this eval exists to catch. Without the two guards below it added 615 and surfaced
+    the same names.
+
+    A real name ending in a particle syllable is truncated rather than dropped, which is
+    acceptable here and only here: candidates go to a human, never to a recall figure.
+    """
+    if plausible_name(tok):
+        return tok
+    stripped = strip_attached(tok)
+    if (stripped != tok and len(stripped) >= _MIN_STRIPPED
+            and stripped[-1] not in _VERB_STEM_TAIL and plausible_name(stripped)):
+        return stripped
+    return None
+
+
 def find_canonical(text, canon):
     """Recall: match each expected entity directly, with Hangul boundaries.
 
@@ -124,7 +171,7 @@ def extract_people(text):
     annotation, never a recall figure. See module docstring.
     """
     cands = set(BOLD.findall(text)) | set(GLOSS.findall(text)) | set(PLAIN.findall(text))
-    return {c for c in cands if plausible_name(c)}
+    return {n for n in map(name_candidate, cands) if n}
 
 
 def _dirty_label(env):

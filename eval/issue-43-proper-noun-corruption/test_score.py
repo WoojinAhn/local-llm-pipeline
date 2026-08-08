@@ -8,7 +8,7 @@ self-contained. Run directly:
 import os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from score import find_canonical
+from score import extract_people, find_canonical
 
 CANON = ["세종", "성삼문", "김종직", "연산군", "이익", "김부식", "정약용", "원균",
          "황진", "심정", "인종", "최항"]
@@ -61,6 +61,23 @@ CASES = [
 ]
 
 
+# (text, expected outside-canonical candidates, why) — extract_people, not recall.
+EXTRACT_CASES = [
+    ("세종은 신숙주 대신 신석주가 훈민정음을 편찬했다", "신석주",
+     "the 신숙주->신석주 fabrication, particle-attached (#46)"),
+    ("김복식의 삼국사기", "김복식", "particle 의 stripped"),
+    ("박영호가 참여했다", "박영호", "particle 가 stripped"),
+    ("신석주 편찬", "신석주", "bare form was already surfaced"),
+]
+# Tokens the stripped path must NOT introduce.
+EXTRACT_NEGATIVE = [
+    ("구조를 바꾸었다", "구조", "two syllables after stripping is ordinary vocabulary"),
+    ("문제가 있었다", "문제", "same"),
+    ("체제를 유지하는 세력", "유지하", "verb stem, not a name"),
+    ("압박을 강요받은 국왕", "강요받", "verb stem, not a name"),
+]
+
+
 def main():
     failed = 0
     for text, expected, why in CASES:
@@ -72,7 +89,24 @@ def main():
         if not ok:
             print(f"        text={text!r}")
             print(f"        expected={sorted(expected)}  got={sorted(got)}")
-    print(f"\n{len(CASES) - failed}/{len(CASES)} passed")
+    total = len(CASES)
+    for text, want, why in EXTRACT_CASES:
+        got = extract_people(text)
+        ok = want in got
+        total += 1
+        failed += not ok
+        print(f"  {'PASS' if ok else 'FAIL'}  {why}")
+        if not ok:
+            print(f"        text={text!r}  want {want!r} in got={sorted(got)}")
+    for text, unwanted, why in EXTRACT_NEGATIVE:
+        got = extract_people(text)
+        ok = unwanted not in got
+        total += 1
+        failed += not ok
+        print(f"  {'PASS' if ok else 'FAIL'}  {why}")
+        if not ok:
+            print(f"        text={text!r}  unwanted {unwanted!r} in got={sorted(got)}")
+    print(f"\n{total - failed}/{total} passed")
     return 1 if failed else 0
 
 

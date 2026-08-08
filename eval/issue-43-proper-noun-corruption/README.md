@@ -257,6 +257,19 @@ It does not cover bare-string homonyms. `최항` is both the Goryeo military rul
 the Joseon Hall-of-Worthies scholar 崔恒; no surface rule separates them, so a model that
 confuses the two still scores a hit. `test_score.py` pins this rather than hiding it.
 
+The candidate extractor takes the mirror of the particle rule (#46). `def8942` taught
+recall to read 신석주**가** but left `extract_people` rejecting it on the `ENDINGS` check,
+so the two metrics biased in opposite directions — recall counted more names while the
+fabrication side went blind to the same attached form. A token that fails as written is
+now retried with one suffix removed. Over the committed artifacts this adds 78
+outside-canonical candidates to 1568 (+5%) and newly surfaces `김용복`, `박희숙`, `왕양명`,
+`이재경`, `홍경래` — the invented-name shape the eval exists to catch. Two guards keep it
+from flooding the annotation queue: the stripped form must be three syllables (at two it
+is ordinary vocabulary — 구조, 문제, 왕조) and must not end in a verb-stem syllable
+(유지**하**, 강요**받**). Without them the same five names arrive with 615 extra
+candidates instead of 78. Recall is untouched: `extract_people` never feeds a recall
+figure.
+
 ### Candidate vs production, same configurations
 
 | Configuration | Profile | Recall | Avg latency (Korea) |
