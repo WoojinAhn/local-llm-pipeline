@@ -48,11 +48,13 @@ flowchart TD
     style E fill:#e3f2fd
 ```
 
-### 왜 이 조합인가 — 의사결정 과정
+### 설계 근거
 
-**1. Ollama vs LM Studio vs mlx-lm**
+> 바로 돌려보려면 [사용법](#사용법)으로 건너뛰세요.
 
-처음에 Ollama를 설치했으나, M5 Max에서 Metal 백엔드 크래시 발생 ([ollama#14432](https://github.com/ollama/ollama/issues/14432)). LM Studio의 MLX 백엔드로 전환하여 동작을 확인한 후, mlx-lm을 직접 사용하는 방식으로 최종 전환. LM Studio는 동시에 하나의 모델만 로딩하는 제약이 있었으나, mlx-lm 직접 사용 시 복수 모델 동시 로딩 가능. (참고: Ollama Metal 크래시는 `brew install ollama`(소스 컴파일)에서만 발생하며, `brew install --cask ollama`(프리빌트 바이너리)로 설치하면 정상 동작 확인됨.)
+**1. 런타임 — mlx-lm 직접 사용**
+
+mlx-lm을 직접 호출합니다. LM Studio는 한 번에 한 모델만 로딩하므로 번역 모델과 추론 모델을 동시에 올릴 수 없고(스왑 시 ~10초 오버헤드), Ollama는 M5 Max에서 Metal 백엔드 크래시가 있습니다 ([ollama#14432](https://github.com/ollama/ollama/issues/14432) — `brew install ollama`(소스 빌드) 한정이며 `brew install --cask ollama`(프리빌트 바이너리)는 정상 동작).
 
 **2. 모델 선택 — 분석 용도**
 
@@ -67,27 +69,18 @@ flowchart TD
 | Qwen 3.5 122B-A10B | 4-bit | ~60GB | A+ | B | MoE 대안 — 영어 추론 GPT-OSS 우위 |
 | Qwen 3 235B-A22B | 4-bit | ~130GB | S+ | A | 128GB에 안 들어감 |
 
-**3. 삼단 파이프라인 — 듀얼에서 진화**
+> 분석력·한국어 열은 자체 테스트에 기반한 주관 등급입니다. MMLU-Pro·AIME는 공개 벤치마크 수치.
 
-초기에는 DeepSeek 분석 → Qwen 3 32B 번역의 이단 파이프라인이었으나, 세 가지 문제를 발견:
+GPT-OSS 120B는 MoE(active 5.1B)라 dense 70B보다 토큰당 추론이 빠르고, harmony `analysis` 채널이 `<think>` 블록보다 간결합니다.
 
-- **모델 스왑**: LM Studio가 한 모델만 로딩 → ~10초 스왑 오버헤드
-- **한국어 입력**: 추론 모델이 mlx-lm에서 한국어 입력을 제대로 처리하지 못함
-- **한자 혼입 위험**: Qwen3 32B/27B도 중국어 혼입 가능성 존재 (Qwen3.5-27B에서 `扬长而去` 혼입 확인)
+**3. 왜 삼단인가 — 번역 래퍼**
 
-해결: 작은 번역 전용 모델(Qwen3-14B, ~7.7GB)을 도입하여 추론 모델과 동시 로딩. 한국어 입력을 먼저 영어로 번역해서 추론 모델에 전달하고, 결과를 다시 한국어로 번역.
+추론 모델에 한국어를 직접 넣지 않고, 번역 전용 Qwen3-14B(~7.7GB)를 추론 모델과 함께 올립니다. 두 가지 제약 때문입니다:
 
-**3-1. 추론 모델 교체 — DeepSeek R1 Distill 70B → GPT-OSS 120B**
+- **한국어 입력**: GPT-OSS는 한국어 네이티브가 아니며, mlx-lm에서 한국어 입력을 제대로 처리하지 못함
+- **한자 혼입**: 번역까지 큰 모델에 맡기면 중국어가 섞임 (Qwen3.5-27B 출력에서 `扬长而去` 확인)
 
-초기 추론 모델이었던 DeepSeek R1 Distill Llama 70B 8-bit에서 GPT-OSS 120B 4-bit MLX로 교체. 얻은 것:
-
-- 메모리: 75GB → 65GB
-- 아키텍처: dense 70B → MoE (active 5.1B) — 추론 속도 개선
-- 벤치: MMLU-Pro ~80 → 90.0, AIME 2024/2025 distill-tier → 96.6 / 97.9 (with tools)
-- 컨텍스트: 32K → 128K
-- CoT 스타일: 장황한 `<think>` 블록 → harmony `analysis` 채널, 간결
-
-한국어 네이티브가 아닌 점은 동일하므로 Qwen3-14B 번역 래퍼는 유지.
+한국어 질문을 영어로 번역해 추론 모델에 전달하고, 결과를 다시 한국어로 번역합니다.
 
 **4. 번역 모델 선택 — Qwen3-14B 4-bit**
 
@@ -100,7 +93,9 @@ flowchart TD
 | Qwen3-14B 8-bit | 14.6GB | A | 0건 | 메모리 대비 소폭 개선 |
 | Qwen3.5-27B 4-bit | 14.1GB | A+ | **1건** ❌ | 중국어 성어 혼입 |
 
-Qwen3-14B 4-bit: 번역 품질과 한자 안전성의 최적 균형. GPT-OSS 120B과 합산 ~73GB로 128GB에 여유 ~55GB.
+> 번역 품질은 주관 등급, 한자 혼입은 실측 건수입니다.
+
+Qwen3-14B 4-bit가 번역 품질과 한자 안전성의 균형점입니다.
 
 ### 요구 사항
 
@@ -151,6 +146,8 @@ python3 mlx-pipeline.py --translate-only "번역할 문장"
 
 ### 멀티모달 파이프라인 (Gemma 4)
 
+Gemma 4 31B를 쓰는 이유는 한국어 네이티브면서 이미지를 함께 받기 때문입니다 — 번역 래퍼가 필요 없어 파이프라인이 단일 추론으로 끝나고, 4-bit 기준 ~17GB라 삼단 파이프라인과 별개로 여유롭게 돌아갑니다.
+
 ```bash
 # 멀티모달 인터랙티브 모드 (텍스트+이미지, 웹 검색 포함)
 python3 multimodal.py
@@ -185,9 +182,7 @@ python3 multimodal.py --no-search "이 주장을 분석해줘"
 - GPT-OSS 120B의 harmony `analysis` 채널로 reasoning 시간이 소요됨 — 복잡한 질문일수록 응답 지연
 - Qwen 번역은 기능적 수준 (전문 번역가 수준은 아님, 하지만 의미 전달 충분)
 - 최초 실행 시 모델 다운로드 필요 (~73GB)
-- GPT-OSS는 한국어 네이티브가 아님 → 삼단 구조(번역 래퍼) 필수
 - **한국 인명이 포함된 질문은 번역 왕복에서 실존하지 않는 인물명이 만들어질 수 있음** — 누락이 아니라 날짜까지 붙은 그럴듯한 가짜 이름으로 대체됨(신숙주→신석주, 원균→원경). 실측 recall 16/42(38.1%). Korea 도메인 답변은 검증 없이 신뢰하지 말 것 ([#43](https://github.com/WoojinAhn/local-llm-pipeline/issues/43), 하네스: `eval/issue-43-proper-noun-corruption/`)
-- ~~Ollama는 M5 Max Metal 크래시 이슈로 사용 불가~~ → `brew install --cask ollama`로 설치 시 정상 동작 확인 ([ollama#14432](https://github.com/ollama/ollama/issues/14432))
 
 ### LM Studio 버전 (레거시)
 
@@ -244,11 +239,13 @@ flowchart TD
     style E fill:#e3f2fd
 ```
 
-### Decision Log
+### Design Rationale
 
-**1. Ollama vs LM Studio vs mlx-lm**
+> To just run it, skip to [Usage](#usage).
 
-Initially installed Ollama, but it crashes on M5 Max due to a Metal backend issue ([ollama#14432](https://github.com/ollama/ollama/issues/14432)). Switched to LM Studio's MLX backend, then to direct mlx-lm usage for simultaneous multi-model loading (LM Studio limited to one model at a time). (Note: The Ollama Metal crash only occurs with `brew install ollama` (source build). Installing via `brew install --cask ollama` (pre-built binary) works correctly.)
+**1. Runtime — direct mlx-lm**
+
+mlx-lm is called directly. LM Studio loads one model at a time, so the translator and the reasoner cannot be resident together (~10s swap overhead), and Ollama crashes on M5 Max from a Metal backend issue ([ollama#14432](https://github.com/ollama/ollama/issues/14432) — only with `brew install ollama` (source build); `brew install --cask ollama` (pre-built binary) works correctly).
 
 **2. Model Selection — Analysis**
 
@@ -263,27 +260,18 @@ Comparing analysis-capable models that fit in 128GB:
 | Qwen 3.5 122B-A10B | 4-bit | ~60GB | A+ | B | MoE alternative — English reasoning weaker than GPT-OSS |
 | Qwen 3 235B-A22B | 4-bit | ~130GB | S+ | A | Doesn't fit in 128GB |
 
-**3. Triple-Stage Pipeline — Evolution from Dual**
+> The Analysis and Korean columns are subjective grades from in-house testing. MMLU-Pro and AIME are published benchmark figures.
 
-The initial dual pipeline (reasoner → Qwen 32B translation) had three problems:
+GPT-OSS 120B is MoE (5.1B active), so per-token inference is faster than a dense 70B, and its harmony `analysis` channel is more concise than `<think>` blocks.
 
-- **Model swap**: LM Studio loads one model at a time → ~10s swap overhead
-- **Korean input**: the reasoner model fails to handle Korean input natively under mlx-lm
-- **Character contamination risk**: Qwen 32B/27B can also leak Chinese characters (confirmed `扬长而去` in Qwen3.5-27B output)
+**3. Why Triple-Stage — the Translation Wrapper**
 
-Solution: introduce a small translator model (Qwen3-14B, ~7.7GB) loaded alongside the reasoner. Korean input is translated to English first, then analyzed, then translated back.
+Korean never reaches the reasoner directly; a translation-only Qwen3-14B (~7.7GB) is loaded alongside it. Two constraints drive this:
 
-**3-1. Reasoner Swap — DeepSeek R1 Distill 70B → GPT-OSS 120B**
+- **Korean input**: GPT-OSS is not Korean-native and fails to handle Korean input properly under mlx-lm
+- **Character contamination**: leaving translation to the large model leaks Chinese (confirmed `扬长而去` in Qwen3.5-27B output)
 
-Replaced the original reasoner (DeepSeek R1 Distill Llama 70B 8-bit) with GPT-OSS 120B 4-bit MLX. Gains:
-
-- Memory: 75GB → 65GB
-- Architecture: dense 70B → MoE (5.1B active) — faster per-token inference
-- Benchmarks: MMLU-Pro ~80 → 90.0, AIME 2024/2025 distill-tier → 96.6 / 97.9 (with tools)
-- Context: 32K → 128K
-- CoT style: verbose `<think>` blocks → harmony `analysis` channel, concise
-
-GPT-OSS is still not Korean-native, so the Qwen3-14B translation wrapper stays.
+Korean questions are translated to English for the reasoner, and the result is translated back to Korean.
 
 **4. Translation Model — Qwen3-14B 4-bit**
 
@@ -291,10 +279,14 @@ Tested across 10 categories (daily, proverbs, technical docs, slang, business, n
 
 | Model | Memory | Quality | Contamination | Decision |
 |-------|--------|---------|---------------|----------|
-| Qwen3-8B 4-bit | 4.3GB | B+ | 0 cases | Mistranslated cultural terms |
+| Qwen3-8B 4-bit | 4.3GB | B+ | 0 cases | Mistranslated cultural terms ("치맥" → "hot pot") |
 | **Qwen3-14B 4-bit** | **7.7GB** | **A** | **0 cases** | **Selected** |
 | Qwen3-14B 8-bit | 14.6GB | A | 0 cases | Marginal gain for 2x memory |
 | Qwen3.5-27B 4-bit | 14.1GB | A+ | **1 case** ❌ | Chinese idiom leaked |
+
+> Quality is a subjective grade; contamination is a measured count.
+
+Qwen3-14B 4-bit is the balance point between translation quality and Hanja safety.
 
 ### Requirements
 
@@ -345,6 +337,8 @@ python3 mlx-pipeline.py --translate-only "text to translate"
 
 ### Multimodal Pipeline (Gemma 4)
 
+Gemma 4 31B fills this slot because it is Korean-native and takes images in the same pass — no translation wrapper, so the pipeline is a single inference, and at ~17GB (4-bit) it runs comfortably apart from the triple-stage pipeline.
+
 ```bash
 # Multimodal interactive mode (text+image, web search included)
 python3 multimodal.py
@@ -379,9 +373,7 @@ Text-to-image / image-to-image generation via a native MLX Swift implementation 
 - GPT-OSS 120B has harmony `analysis` channel latency — longer for complex queries
 - Qwen translation is functional, not professional-grade (but sufficient for comprehension)
 - First run downloads ~73GB of model weights
-- GPT-OSS is not Korean-native → triple-stage (translation wrapper) is required
 - **Queries involving Korean personal names can come back with people who never existed** — the round trip does not drop a name, it substitutes a plausible one, sometimes with dates (신숙주 → 신석주, 원균 → 원경). Measured recall is 16/42 (38.1%). Do not trust Korea-domain answers without checking them ([#43](https://github.com/WoojinAhn/local-llm-pipeline/issues/43), harness under `eval/issue-43-proper-noun-corruption/`)
-- ~~Ollama unusable on M5 Max due to Metal crash~~ → works with `brew install --cask ollama` (pre-built binary) ([ollama#14432](https://github.com/ollama/ollama/issues/14432))
 
 ### LM Studio Version (Legacy)
 
