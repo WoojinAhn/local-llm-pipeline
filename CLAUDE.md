@@ -39,9 +39,9 @@ python3 llm-pipeline.py
 The pipelines themselves have no test suite — verify changes by running the relevant one and inspecting output (Korean cleanliness, search injection, channel filtering). The eval harness under `eval/issue-43-proper-noun-corruption/` does have tests; run them there, they load no model:
 
 ```bash
-python eval/issue-43-proper-noun-corruption/test_score.py             # scorer
-python eval/issue-43-proper-noun-corruption/test_control_preflight.py # control harness
-python eval/issue-43-proper-noun-corruption/test_transitions.py       # alias matcher + analyzer
+python3 eval/issue-43-proper-noun-corruption/test_score.py             # scorer
+python3 eval/issue-43-proper-noun-corruption/test_control_preflight.py # control harness
+python3 eval/issue-43-proper-noun-corruption/test_transitions.py       # alias matcher + analyzer
 ```
 
 ## Setup / Environment

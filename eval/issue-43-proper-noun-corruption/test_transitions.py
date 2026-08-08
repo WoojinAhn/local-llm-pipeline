@@ -205,7 +205,7 @@ def _():
         path = f"{A.HERE}/{mod}.py"
         if not os.path.exists(path):
             continue
-        for m in re.finditer(r"^\s*(?:import|from)\s+([A-Za-z_][\w.]*)", 
+        for m in re.finditer(r"^\s*(?:import|from)\s+([A-Za-z_][\w.]*)",
                              open(path).read(), re.M):
             name = m.group(1).split(".")[0]
             assert name not in banned, f"{mod}.py imports {name}"
