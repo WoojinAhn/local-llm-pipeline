@@ -108,12 +108,18 @@ retroactively rewritten.
 Long runs save after every case (atomic replace) and support `--resume`, so an
 interrupted multi-hour run is not lost. `--resume` refuses to append when
 `config_detail`, `search`, `profile`, `generation_sha256_16` or `prompts_sha256_16` differ
-from the existing file, so results from different code never mix into one record.
+from the existing file, so results from different code never mix into one record. For the
+clean-English control, `config_detail` also pins the source artifact's **content hash**,
+not just its `source_tag` filename (schema 3, #47). Filename-only pinning let a
+regenerated actual arm pass the gate, and the resulting file — half built from the old
+KO→EN text, half from the new — still satisfied `check_provenance` downstream, because a
+run records a single source sha. The refusal now happens in `init_payloads`, before any
+model loads.
 
 The committed clean-control outputs are complete legacy schema-1 records. At generation
 time the alias table lived inside `control_clean_english.py`, so the recorded script hash
-covered it. They must not be resumed with the schema-2 harness or backfilled with the
-current alias-file hash. Their raw stage records also retain a legacy `stopped_at_cap`
+covered it. They must not be resumed with a later-schema harness or backfilled with the
+current alias-file or source hashes — neither can be re-derived. Their raw stage records also retain a legacy `stopped_at_cap`
 field derived from post-generation retokenization; it is not a recorded stop reason and
 must not be interpreted as one. Current runs write `retokenized_near_limit` instead.
 
