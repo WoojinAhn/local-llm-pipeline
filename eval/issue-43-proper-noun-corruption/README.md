@@ -224,8 +224,11 @@ intermediates and cannot support stage-level analysis.
 Same harness and case set as v2, with `--profile production` (translate 2000 / reason
 4000, the limits `mlx-pipeline.py` uses). Denominator 42 canonical entities over 6
 Korea-domain cases; both configurations completed all 9 non-holdout cases with
-`source_dirty=false`, generation hash `f0fad4af3d93f000`. The figures below use the
-suffix-aware scorer at scoring hash `677a4d573089930e`.
+`source_dirty=false`, generation hash `f0fad4af3d93f000`. The figures below were produced
+by the suffix-aware scorer at scoring hash `677a4d573089930e`, and re-verified unchanged
+at `cba872bf27194ad9` (#50 made an unreachable guard reachable; scoring behaviour is
+identical). A scorer edit deliberately does not invalidate the raw generations — see the
+generation/scoring hash split above.
 
 | Configuration | Recall | Miss rate | Avg latency (Korea) |
 |---|---|---|---|

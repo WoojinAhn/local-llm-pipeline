@@ -140,8 +140,11 @@ def score_config(name, cases, ann, tag="search-off-candidate"):
     validity = Counter()
     per_case = []
     for r in run["results"]:
-        c = by_id[r["id"]]
-        if c["domain"] != "korea":
+        # A result outside the scored case set (e.g. a --holdout run scored without
+        # --holdout) is what `extra` exists to report; indexing by_id here raised
+        # KeyError first and made that banner unreachable.
+        c = by_id.get(r["id"])
+        if c is None or c["domain"] != "korea":
             continue
         canon = set(c["canonical_people"])
         hit = find_canonical(r["final"], canon)
