@@ -130,6 +130,34 @@ def _():
         assert any(C._flat(a) == C._flat(alias) for a in C.CONVENTIONAL_ALIASES[ko]), ko
 
 
+@check("the romanization leakage arm matches spacing and hyphenation, not one fused token")
+def _():
+    # The fused form is a spelling no English question would contain, so matching only it
+    # made this arm of check_no_leakage unable to fire.
+    rom, spaced = C.romanize("신숙주"), C.romanize_spaced("신숙주")
+    assert rom == "sinsukju" and spaced == "sin suk ju", (rom, spaced)
+    for q in ("compiled by Sin Suk-ju", "compiled by Sin Sukju",
+              "compiled by Sinsukju", "compiled by SIN SUK JU"):
+        assert C.contains_alias(q, spaced), q
+        assert not C.contains_alias(q, rom) or q.endswith("Sinsukju"), q
+    # Still word-bounded: a longer name must not be swallowed.
+    assert not C.contains_alias("compiled by Sin Suk-ju-hwan", spaced)
+
+
+@check("check_no_leakage rejects a question carrying a spaced mechanical romanization")
+def _():
+    cases = C.load_cases()
+    questions = dict(C.load_questions())
+    cid = cases[0]["id"]
+    victim = next(e for c in cases for e in c["canonical_people"]
+                  if len(C.romanize(e)) >= 5)
+    questions[cid] = f"What did {C.romanize_spaced(victim).title()} contribute?"
+    problems = C.check_no_leakage(cases, questions)
+    assert any(i == cid and "mechanical romanization" in w for i, w in problems), problems
+    # The shipped question set must remain clean.
+    assert not C.check_no_leakage(cases, C.load_questions())
+
+
 @check("production profile only: reason 4000 / translate 2000")
 def _():
     p = R.PROFILES[C.PROFILE]

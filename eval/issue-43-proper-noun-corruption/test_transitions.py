@@ -58,6 +58,35 @@ def _():
     assert not A.unterminated({"raw": "analysis assistantfinal answer"})
 
 
+@check("a reasoner that never closes at all is not read as truncated")
+def _():
+    # Qwen3.6 opens <think> from the chat template, so the opened-block precondition
+    # run.py uses is absent from every completion — including the genuinely truncated
+    # ones, which must stay flagged. The separating signal is the arm's own behaviour.
+    closing = [{"stages": {"reason": {"raw": "a </think> b"}}},
+               {"stages": {"reason": {"raw": "mid-sentence and cut"}}}]
+    never = [{"stages": {"reason": {"raw": "plain answer"}}},
+             {"stages": {"reason": {"raw": "another plain answer"}}}]
+    assert A.emits_closure(closing) and not A.emits_closure(never)
+    cut = {"raw": "mid-sentence and cut"}
+    assert A.unterminated(cut, A.emits_closure(closing)), "truncation must stay flagged"
+    assert not A.unterminated(cut, A.emits_closure(never)), \
+        "a non-reasoning model's every case would be dropped from SENSITIVITY"
+
+
+@check("the two real truncated Qwen3.6 stages have no opener, so run.py's test cannot be reused")
+def _():
+    rows, meta = A.collect()
+    for cfg, tag, cid in (("three-stage-qwen36", A.ACTUAL_TAG, "ko-03"),
+                          ("control-clean-qwen36", A.CONTROL_TAG, "ko-04")):
+        raw = A.load_arm(cfg, tag)[0][cid]["stages"]["reason"]["raw"]
+        assert "<think>" not in raw and "<|channel|>analysis" not in raw, cid
+        assert not A.CLOSURE.search(raw), cid
+    # Mirroring run.py's precondition literally would unflag both and erase SENSITIVITY.
+    assert meta[("qwen36", "ko-03")]["actual_unterminated"] is True
+    assert meta[("qwen36", "ko-04")]["control_unterminated"] is True
+
+
 @check("near_limit is retokenized-length semantics, not a recorded stop reason")
 def _():
     assert A.near_limit({"tokens": 4000}, 4000)

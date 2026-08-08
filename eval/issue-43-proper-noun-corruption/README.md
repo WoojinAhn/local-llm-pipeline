@@ -15,7 +15,7 @@ regression-tested rather than assumed to work.
 | `run.py` | Runs a configuration, capturing **every stage** and full environment metadata. |
 | `score.py` | Canonical recall (automatic) + entity validity (annotation-driven). |
 | `isolate.py` | Three controlled experiments separating translation / reasoner / back-translation. |
-| `control_questions.jsonl` | Hand-written English questions with the same intent and no canonical-name leakage. |
+| `control_questions.jsonl` | Hand-written English questions with the same intent and no canonical-name leakage (Hangul, listed aliases, and RR across spacing/hyphenation; non-RR romanizations rest on the alias table — #49). |
 | `control_clean_english.py` | Runs the clean-English reasoner + back-translation control at production limits. |
 | `analyze_transitions.py` | Compares per-person reasoner (R) to final translation (T) transitions without model calls. |
 | `canonical_aliases.py` | Canonical alias data and the boundary-aware matcher, shared by the control harness and the analyzer. |
