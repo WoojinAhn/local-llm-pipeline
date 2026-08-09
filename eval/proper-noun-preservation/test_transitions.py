@@ -3,7 +3,7 @@
 Pins the six aggregates the analysis is quoted on, the Q guard, the detected exclusion,
 and — most importantly — that the analyzer never touches a model.
 
-    python eval/issue-43-proper-noun-corruption/test_transitions.py
+    python eval/proper-noun-preservation/test_transitions.py
 """
 import json, os, re, subprocess, sys
 

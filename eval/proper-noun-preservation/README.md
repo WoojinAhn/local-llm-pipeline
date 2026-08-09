@@ -66,7 +66,7 @@ described as "4x less corruption", which the data does not support.
 ## Running
 
 ```bash
-cd eval/issue-43-proper-noun-corruption
+cd eval/proper-noun-preservation
 source ../../.venv/bin/activate    # or use ../../.venv/bin/python below; `python` is not on PATH otherwise
 python run.py three-stage-gpt-oss                             # search off, candidate profile
 python run.py three-stage-qwen36 --profile production         # production token limits
@@ -108,6 +108,11 @@ Records written before this split (`outputs/*/run-search-off-candidate.json` fro
 2026-08-07) carry only `repo_dirty`. Two of the three read `true` for exactly this
 reason; their `dirty_paths` show only sibling `outputs/**` files. They are not
 retroactively rewritten.
+
+For the same reason, `dirty_paths` in records predating #61 still spell this directory
+`eval/issue-43-proper-noun-corruption/`, the name it carried while those runs were made.
+The field is descriptive git state, never resolved as a path, so the stale strings are
+left as written rather than edited to match the current layout.
 
 Long runs save after every case (atomic replace) and support `--resume`, so an
 interrupted multi-hour run is not lost. `--resume` refuses to append when

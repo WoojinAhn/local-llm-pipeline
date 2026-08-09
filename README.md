@@ -182,7 +182,7 @@ python3 multimodal.py --no-search "이 주장을 분석해줘"
 - GPT-OSS 120B의 harmony `analysis` 채널로 reasoning 시간이 소요됨 — 복잡한 질문일수록 응답 지연
 - Qwen 번역은 기능적 수준 (전문 번역가 수준은 아님, 하지만 의미 전달 충분)
 - 최초 실행 시 모델 다운로드 필요 (~73GB)
-- **한국 인명이 포함된 질문은 번역 왕복에서 실존하지 않는 인물명이 만들어질 수 있음** — 누락이 아니라 날짜까지 붙은 그럴듯한 가짜 이름으로 대체됨(신숙주→신석주, 원균→원경). 실측 recall 16/42(38.1%). Korea 도메인 답변은 검증 없이 신뢰하지 말 것 ([#43](https://github.com/WoojinAhn/local-llm-pipeline/issues/43), 하네스: `eval/issue-43-proper-noun-corruption/`)
+- **한국 인명이 포함된 질문은 번역 왕복에서 실존하지 않는 인물명이 만들어질 수 있음** — 누락이 아니라 날짜까지 붙은 그럴듯한 가짜 이름으로 대체됨(신숙주→신석주, 원균→원경). 실측 recall 16/42(38.1%). Korea 도메인 답변은 검증 없이 신뢰하지 말 것 ([#43](https://github.com/WoojinAhn/local-llm-pipeline/issues/43), 하네스: `eval/proper-noun-preservation/`)
 
 ### LM Studio 버전 (레거시)
 
@@ -373,7 +373,7 @@ Text-to-image / image-to-image generation via a native MLX Swift implementation 
 - GPT-OSS 120B has harmony `analysis` channel latency — longer for complex queries
 - Qwen translation is functional, not professional-grade (but sufficient for comprehension)
 - First run downloads ~73GB of model weights
-- **Queries involving Korean personal names can come back with people who never existed** — the round trip does not drop a name, it substitutes a plausible one, sometimes with dates (신숙주 → 신석주, 원균 → 원경). Measured recall is 16/42 (38.1%). Do not trust Korea-domain answers without checking them ([#43](https://github.com/WoojinAhn/local-llm-pipeline/issues/43), harness under `eval/issue-43-proper-noun-corruption/`)
+- **Queries involving Korean personal names can come back with people who never existed** — the round trip does not drop a name, it substitutes a plausible one, sometimes with dates (신숙주 → 신석주, 원균 → 원경). Measured recall is 16/42 (38.1%). Do not trust Korea-domain answers without checking them ([#43](https://github.com/WoojinAhn/local-llm-pipeline/issues/43), harness under `eval/proper-noun-preservation/`)
 
 ### LM Studio Version (Legacy)
 

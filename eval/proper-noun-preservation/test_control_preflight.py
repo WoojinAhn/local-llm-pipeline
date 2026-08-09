@@ -7,7 +7,7 @@ a matching payload while refusing a changed one or an accidental overwrite.
 The resume and smoke checks drive the real functions (init_payloads, main) rather than
 re-implementing their logic, with R.load/R.call replaced by counting fakes.
 
-    python eval/issue-43-proper-noun-corruption/test_control_preflight.py
+    python eval/proper-noun-preservation/test_control_preflight.py
 """
 import contextlib, io, json, os, shutil, sys, tempfile
 

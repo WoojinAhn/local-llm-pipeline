@@ -36,12 +36,12 @@ python3 multimodal.py --text-only "..."          # no image
 python3 llm-pipeline.py
 ```
 
-The pipelines themselves have no test suite — verify changes by running the relevant one and inspecting output (Korean cleanliness, search injection, channel filtering). The eval harness under `eval/issue-43-proper-noun-corruption/` does have tests. They load no model, but `test_control_preflight.py` imports `run.py` and therefore needs `mlx` — use the venv interpreter, not the system `python3`:
+The pipelines themselves have no test suite — verify changes by running the relevant one and inspecting output (Korean cleanliness, search injection, channel filtering). The eval harness under `eval/proper-noun-preservation/` does have tests. They load no model, but `test_control_preflight.py` imports `run.py` and therefore needs `mlx` — use the venv interpreter, not the system `python3`:
 
 ```bash
-.venv/bin/python eval/issue-43-proper-noun-corruption/test_score.py             # scorer
-.venv/bin/python eval/issue-43-proper-noun-corruption/test_control_preflight.py # control harness
-.venv/bin/python eval/issue-43-proper-noun-corruption/test_transitions.py       # alias matcher + analyzer
+.venv/bin/python eval/proper-noun-preservation/test_score.py             # scorer
+.venv/bin/python eval/proper-noun-preservation/test_control_preflight.py # control harness
+.venv/bin/python eval/proper-noun-preservation/test_transitions.py       # alias matcher + analyzer
 ```
 
 ## Setup / Environment
@@ -96,7 +96,7 @@ The pipelines themselves have no test suite — verify changes by running the re
 - **Reasoner ignores Korean search results** → always translate Korean results to English before injecting.
 - **Reasoner speculates without search** on factual queries → web search integration is the fix.
 - **Qwen Hanja contamination**: Qwen3-14B 4-bit clean (0/10 tested); larger Qwen mix Hanja — Qwen3.5-27B 4-bit mixed Chinese idioms, Qwen3.6-27B substitutes raw Hanja mid-word (rejected as Gemma replacement, #34). Re-test any Qwen swap. This rules Qwen3.6 out of Korean-facing slots only. #34's other blocker — mlx-lm being unable to load `qwen3_5_text` — is gone: 0.31.3 ships `qwen3_5`/`qwen3_5_moe` and loads them, so Qwen3.6-35B-A3B is live as an English-only reasoner (#40).
-- **Translation round-trip fabricates Korean proper nouns**: KO→EN→analysis→EN→KO invents plausible historical figures (신숙주→신석주, 원균→원경, plus wholly invented names with dates). Reasoner-independent in direction but not in degree, and a clean-English control recovers part of it — measured in #43, harness under `eval/issue-43-proper-noun-corruption/`. Do not treat Korea-domain answers from the 3-stage path as reliable.
+- **Translation round-trip fabricates Korean proper nouns**: KO→EN→analysis→EN→KO invents plausible historical figures (신숙주→신석주, 원균→원경, plus wholly invented names with dates). Reasoner-independent in direction but not in degree, and a clean-English control recovers part of it — measured in #43, harness under `eval/proper-noun-preservation/`. Do not treat Korea-domain answers from the 3-stage path as reliable.
 - **GPT-OSS long-context memory pressure**: ~65GB weights + KV cache can strain 128GB on long sessions.
 - **mlx-lm has `gemma4_text` (text only)**; Gemma 4 multimodal still needs mlx-vlm.
 - **mlx-vlm is pinned far behind**: 0.5.0 carries 59 architecture packages, main/0.6.10 carries 168. `deepseek_v4`, `kimi_k3`, `minimax_m3`, `solar_open` exist only upstream, so "MLX cannot load X" is worth re-checking against the current release before believing it (#42).

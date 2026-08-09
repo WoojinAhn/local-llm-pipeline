@@ -3,7 +3,7 @@
 Plain asserts, no test framework — the repo has no test suite and this harness is
 self-contained. Run directly:
 
-    .venv/bin/python eval/issue-43-proper-noun-corruption/test_score.py
+    .venv/bin/python eval/proper-noun-preservation/test_score.py
 """
 import json, os, sys
 
