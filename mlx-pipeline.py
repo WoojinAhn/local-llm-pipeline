@@ -15,6 +15,7 @@ Usage:
 """
 
 import os
+import readline  # noqa: F401 - character-aware line editing; Darwin's tty erases by byte, splitting Hangul
 import sys
 import time
 
