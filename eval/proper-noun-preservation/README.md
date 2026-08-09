@@ -120,8 +120,15 @@ renamed underneath them: `HERE` is resolved at import time, so the next atomic s
 with `FileNotFoundError` on a path that no longer exists. #61's rename killed a nine-case
 run three cases in. Two runs must also not share a venv with dependency work — the stack
 is not fully captured in provenance (#62). `--resume` refuses to append when
-`config_detail`, `search`, `profile`, `generation_sha256_16` or `prompts_sha256_16` differ
-from the existing file, so results from different code never mix into one record. For the
+`config_detail`, `search`, `profile`, `generation_sha256_16`, `prompts_sha256_16` or
+`reasoner_system_sha256_16` differ from the existing file, so results from different code
+never mix into one record. That last key exists because `prompts_sha256_16` hashes
+`prompts.py` as a file, and since #67 the reasoner system prompt is built by
+`prompts.reasoner_system()`, which appends the user's locale at call time. Identical
+source on two machines therefore sends two different prompts; the resolved value is
+hashed separately, and the locale string that produced it is recorded alongside as
+`reasoner_system_location`. Records written before #70 carry neither field, so they are
+refused on resume — which is correct, since the prompt they used cannot be recovered. For the
 clean-English control, `config_detail` also pins the source artifact's **content hash**,
 not just its `source_tag` filename (schema 3, #47). Filename-only pinning let a
 regenerated actual arm pass the gate, and the resulting file — half built from the old

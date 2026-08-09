@@ -161,7 +161,7 @@ def plan(cases, questions):
         for c in cases:
             q = questions[c["id"]]
             rows.append(dict(id=c["id"], reasoner=name,
-                             prompt_sha256_16=sha16(R.prompts.REASONER_SYSTEM + "\x00" + q),
+                             prompt_sha256_16=sha16(R.prompts.reasoner_system() + "\x00" + q),
                              question=q))
     return rows
 
@@ -315,7 +315,7 @@ def main():
         cfg = R.CONFIGS[name]
         m, t = R.load(cfg["reasoner"])
         for r in todo:
-            s = R.call(m, t, R.prompts.REASONER_SYSTEM, r["question"],
+            s = R.call(m, t, R.prompts.reasoner_system(), r["question"],
                        R.GEN["reason_max_tokens"], thinking=cfg.get("reasoner_thinking"))
             s["retokenized_near_limit"] = s["tokens"] >= R.GEN["reason_max_tokens"]
             payloads[name]["results"].append(dict(
