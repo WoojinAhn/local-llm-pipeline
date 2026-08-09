@@ -101,17 +101,29 @@ def tavily_search(query: str, api_key: str | None = None, max_results: int = 5) 
         return []
 
 
+def localize_en_query(en_query: str, is_local: bool) -> str:
+    """Append the user's country to an English query when the answer depends on it.
+
+    Tavily's own `country` parameter does not steer it — only the query text does (#67).
+    Brave needs no such fixup; its geo parameters work.
+
+    Split out of search_both so a caller that has to record the query it actually
+    issued can compute it without reimplementing this rule. Idempotent.
+    """
+    if not is_local:
+        return en_query
+    _, country_name, _ = user_locale()
+    if country_name and country_name.lower() not in en_query.lower():
+        return f"{en_query} {country_name}"
+    return en_query
+
+
 def search_both(ko_query: str, en_query: str, is_local: bool = False) -> tuple[list[dict], list[dict]]:
     """Run Brave (Korean) and Tavily (English) searches in parallel.
 
-    When is_local, the country is appended to the English query. Tavily's own
-    `country` parameter does not steer it — only the query text does (#67).
-    Brave needs no such fixup; its geo parameters work.
+    When is_local, the country is appended to the English query.
     """
-    if is_local:
-        _, country_name, _ = user_locale()
-        if country_name and country_name.lower() not in en_query.lower():
-            en_query = f"{en_query} {country_name}"
+    en_query = localize_en_query(en_query, is_local)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         ko_future = pool.submit(brave_search, ko_query)
