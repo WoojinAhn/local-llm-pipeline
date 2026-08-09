@@ -32,7 +32,7 @@ Usage:
     python run.py three-stage-qwen36 --profile candidate
     python run.py single-exaone --search parity --profile production --resume
 """
-import hashlib, json, os, platform, re, subprocess, sys, time
+import hashlib, importlib.metadata, json, os, platform, re, subprocess, sys, time
 from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -95,11 +95,19 @@ def _hash(files):
 
 
 def env_metadata(search, profile, name):
-    def ver(mod):
+    # Distribution metadata, not the module attribute: `mlx` exposes no top-level
+    # `__version__` (it lives under `mlx.core`), so an attribute lookup recorded the core
+    # as null in every artifact ever written. These three decide the numerics, so a missing
+    # one is a refusal rather than a null — an unattributable record is worse than no record.
+    def ver(dist):
         try:
-            return __import__(mod).__version__
-        except Exception:
-            return None
+            return importlib.metadata.version(dist)
+        except importlib.metadata.PackageNotFoundError as e:
+            raise RuntimeError(
+                f"cannot record a version for {dist!r}, which the harness depends on. "
+                f"Runs are only comparable within a fixed stack; refusing to write an "
+                f"artifact that cannot be attributed to one."
+            ) from e
 
     def git(*args):
         try:
@@ -149,7 +157,7 @@ def env_metadata(search, profile, name):
             open(f"{ROOT}/prompts.py", "rb").read()).hexdigest()[:16],
         python=sys.version.split()[0],
         platform=platform.platform(), machine=platform.machine(),
-        mlx=ver("mlx"), mlx_lm=ver("mlx_lm"), transformers=ver("transformers"),
+        mlx=ver("mlx"), mlx_lm=ver("mlx-lm"), transformers=ver("transformers"),
         generation=dict(sampler="greedy (temp=0 default)", profile=profile, **GEN),
     )
 
