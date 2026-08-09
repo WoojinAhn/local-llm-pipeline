@@ -106,12 +106,12 @@ The pipelines themselves have no test suite — verify changes by running the re
 
 ## Backlog (tracked as issues)
 
+- `requirements.txt` pins nothing and does not declare `mlx`/`transformers` at all — #63. A rebuilt venv can silently land on the mlx 0.32.0 stack that #42 rolled back, and the harness's committed baseline is only comparable within a fixed stack. Complementary to #62: #62 makes the stack observable after the fact, #63 makes it reproducible in advance.
 - Korea-domain routing around the translation wrapper — #44, blocked on #40 for memory headroom. The recall table in #44's body is stale (it predates the scorer fixes) and overstates the gap ~4x; corrected in a comment there — at the same profile it is EXAONE 25/42 vs 3-stage+gpt-oss 17/42, not 16/43 vs 4/43. Its "reasoner-independent" claim is also wrong; degree differs (gpt-oss 17 vs Qwen3.6 12).
 - Reasoner swap to Qwen3.6-35B-A3B — #40. Memory 65.9GB → 19.7GB; speed roughly neutral once thinking tokens are counted, and it *lowers* Korean recall, so it is not a free win. The spike is measured and closed out in a comment; the issue stays open as the tracker for the swap itself, which #44's memory budget depends on.
-- mlx-vlm 0.5.0 → 0.6.10 — #42. Independent of the above.
-- Speculative decoding for the GPT-OSS reasoner (gpt-oss-20b draft) — #35.
-- KV cache quantization (`kv_bits`) for GPT-OSS long-session memory pressure — #39.
+- Parked: mlx-vlm 0.5.0 → 0.6.10 — #42. The upgrade drags the shared mlx core (0.31.2 → 0.32.0) and so puts the 3-stage pipeline in the blast radius, but it unlocks nothing we currently want: `exaone4` upstream is a text-only shell (#44's EXAONE path already runs through patched mlx-lm), and `deepseek_v4`'s only consumer #41 is itself parked. Re-entry conditions in the issue.
+- Parked: speculative decoding for the GPT-OSS reasoner (gpt-oss-20b draft) — #35, and KV cache quantization (`kv_bits`) — #39. Both act on the *default* reasoner path, so both stay valid as long as GPT-OSS is the default; they are superseded only if #40 promotes Qwen3.6-35B-A3B to default rather than flag-gated. They are not redundant with #40 — #39 targets KV growth, not weights, and gpt-oss vs Qwen3.6 is a wall-clock tie (27.20s vs 27.76s over 5 prompts in `english-reasoner-ab.json`).
 - Hy-MT2 (Tencent, WMT lineage; supersedes the earlier Hunyuan-MT 7B note) as a translation-stage candidate. Not a drop-in: the current Qwen3-14B slot also does the `SEARCH:yes/no` judgment, which a dedicated MT model cannot.
 - Result-to-file save option; streaming translation output; Textual TUI — #8.
-- Parked: DeepSeek V4 Flash at 2.4-bit — #41. Fits 92.8GB but needs the mlx-vlm path and the quant is unvalidated.
+- Parked: DeepSeek V4 Flash at 2.4-bit — #41. Fits 92.8GB but needs the mlx-vlm path and the quant is unvalidated. Also gated on #42, which is itself parked.
 - Closed as infeasible: GLM-5.2 (#38) — 395GB at mxfp4, no quantization path fits 128GB.
