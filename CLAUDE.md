@@ -87,7 +87,8 @@ It says nothing about generation *quality*. Korean cleanliness, search injection
 - `mlx-pipeline.py` — 3-stage pipeline (mlx-lm).
 - `multimodal.py` — Gemma 4 multimodal pipeline (mlx-vlm).
 - `prompts.py` — shared prompts (date injection, search judge/query gen, citation enforcement, thinking filters). Edit here to change system prompts for both pipelines.
-- `web_search.py` — `brave_search()`, `tavily_search()`, `search_both()`, `format_search_context()`.
+- `web_search.py` — `brave_search()`, `tavily_search()`, `search_both()`, `localize_en_query()`, `format_search_context()`. `search_both()` applies `localize_en_query()` itself; call it directly only when you need the query text that was issued (#71).
+- `test_pipeline_contract.py` — the `mlx-pipeline.py` result/event/render contract, model-free.
 - `env_loader.py` — loads `.env`.
 - `setup-flux.sh` — FLUX.2 CLI build script.
 
