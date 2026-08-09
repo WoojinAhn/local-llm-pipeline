@@ -93,7 +93,7 @@ def exp_c():
     for repo in REASONERS:
         m, t = load(repo)
         think = True if "Qwen3.6" in repo else None
-        text, secs, raw = call(m, t, prompts.REASONER_SYSTEM, REASONER_Q, 8000, thinking=think)
+        text, secs, raw = call(m, t, prompts.reasoner_system(), REASONER_Q, 8000, thinking=think)
         out[repo] = dict(answer=text, secs=secs, raw=raw,
                          unterminated_think=unterminated(raw))
         del m

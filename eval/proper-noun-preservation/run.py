@@ -155,6 +155,13 @@ def env_metadata(search, profile, name):
         scoring_sha256_16=_hash(SCORING_FILES),
         prompts_sha256_16=hashlib.sha256(
             open(f"{ROOT}/prompts.py", "rb").read()).hexdigest()[:16],
+        # The file hash above cannot attribute the reasoner prompt any more: #67 made
+        # reasoner_system() resolve the user's locale at call time, so two machines
+        # running identical source send different system prompts. Record the resolved
+        # value's hash, and the locale that produced it, or the record is unattributable.
+        reasoner_system_sha256_16=hashlib.sha256(
+            prompts.reasoner_system().encode()).hexdigest()[:16],
+        reasoner_system_location=prompts.current_location_context(),
         python=sys.version.split()[0],
         platform=platform.platform(), machine=platform.machine(),
         mlx=ver("mlx"), mlx_lm=ver("mlx-lm"), transformers=ver("transformers"),
@@ -207,7 +214,7 @@ def run_case_3stage(c, tm, tt, rm, rt, think, search):
         searched = dict(hits=hits, translated_ko_snippets=translated, context=ctx)
         reason_input = prompts.build_search_context_prompt(ctx, en_q)
 
-    s2 = call(rm, rt, prompts.REASONER_SYSTEM, reason_input, GEN["reason_max_tokens"],
+    s2 = call(rm, rt, prompts.reasoner_system(), reason_input, GEN["reason_max_tokens"],
               thinking=think)
     # Production passes the full analysis; do not truncate.
     s3 = call(tm, tt, prompts.TRANSLATE_EN_TO_KO, s2["text"],
@@ -231,7 +238,8 @@ def arg(flag, default):
 
 
 # Scoring provenance is deliberately excluded — it does not affect raw generations.
-RESUME_KEYS = ("search", "profile", "generation_sha256_16", "prompts_sha256_16")
+RESUME_KEYS = ("search", "profile", "generation_sha256_16", "prompts_sha256_16",
+               "reasoner_system_sha256_16")
 
 
 def check_resumable(payload, env, cfg):
