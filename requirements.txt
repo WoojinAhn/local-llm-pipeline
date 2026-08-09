@@ -1,3 +1,31 @@
-mlx-lm
-mlx-vlm
-rich
+# Pinned deliberately. These versions decide model numerics, and the eval harness under
+# eval/proper-noun-preservation/ compares runs against a committed baseline that is only
+# meaningful within a fixed stack. Bumping any of them is a measurement-affecting change:
+# re-measure before trusting a comparison across the bump. See #63, and #42 for the mlx
+# core upgrade that is deliberately not taken.
+#
+# Several of these arrive transitively and are declared anyway, because they are the ones
+# whose version changes output rather than merely changing an API:
+#   mlx / mlx-metal  — the compute core. mlx-vlm >=0.6.0 hard-requires mlx>=0.32.0, which
+#                      would drag the core out from under mlx-lm too (#42).
+#   safetensors      — weight loading.
+#   tokenizers / sentencepiece / transformers — tokenization, and so the token ids the
+#                      models actually see.
+#   numpy            — array ops in the surrounding pre/post-processing.
+#
+# This file fixes the packages that matter. It does NOT fix the full dependency closure —
+# a fresh resolve still drifts ~45 transitive packages. Use requirements.lock to reproduce
+# the exact stack the committed harness baseline was measured on.
+
+mlx==0.31.2
+mlx-metal==0.31.2
+mlx-lm==0.31.3
+mlx-vlm==0.5.0
+transformers==5.9.0
+tokenizers==0.22.2
+sentencepiece==0.2.1
+safetensors==0.7.0
+numpy==2.4.3
+
+# Rendering only — no effect on inference, so a range is fine.
+rich>=14.0,<15

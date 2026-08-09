@@ -46,7 +46,7 @@ The pipelines themselves have no test suite — verify changes by running the re
 
 ## Setup / Environment
 
-- Dependencies: `mlx-lm`, `mlx-vlm`, `rich` (`pip install -r requirements.txt`).
+- Dependencies: `pip install -r requirements.txt`. The versions are pinned deliberately — they decide model numerics, and the eval baseline is only comparable within a fixed stack, so a bump is a measurement-affecting change rather than a routine upgrade. To reproduce a harness measurement exactly, install `requirements.lock` instead: `requirements.txt` fixes the packages that matter, but a fresh resolve still drifts ~45 transitive packages.
 - Secrets in `.env` (loaded by `env_loader.load_env()`, gitignored): `BRAVE_API_KEY`, `TAVILY_API_KEY` (search — optional, skipped gracefully if unset), `HF_TOKEN` (avoids HuggingFace rate limits / gated-model access).
 - Model path resolution: LM Studio cache (`~/.lmstudio/models/`) → HuggingFace cache (`~/.cache/huggingface/hub/`) → HuggingFace ID fallback.
 - Offline run: set `HF_HUB_OFFLINE=1` once models are cached.
