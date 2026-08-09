@@ -30,10 +30,11 @@ from rich.markdown import Markdown
 from rich.rule import Rule
 
 from prompts import (
-    REASONER_SYSTEM,
+    reasoner_system,
     TRANSLATE_KO_TO_EN,
     TRANSLATE_EN_TO_KO,
     build_search_context_prompt,
+    location_judge_prompt,
     filter_thinking_harmony,
 )
 
@@ -164,12 +165,26 @@ def translate(text, direction="ko2en", stream=False):
     return raw
 
 
+def judge_location(query):
+    """Ask Qwen whether the query depends on the user's location.
+
+    A separate call rather than another line in TRANSLATE_KO_TO_EN — folding it in
+    there degraded both translation fidelity and the SEARCH judgment (#67).
+    """
+    messages = [{"role": "user", "content": location_judge_prompt(query)}]
+    prompt = _qwen_tokenizer.apply_chat_template(
+        messages, add_generation_prompt=True, tokenize=False, enable_thinking=False,
+    )
+    raw = _stream_qwen(_qwen_model, _qwen_tokenizer, prompt, max_tokens=10, stream=False)
+    return "local:yes" in raw.lower()
+
+
 def analyze(text, stream=True):
     """Analyze text using the GPT-OSS reasoner with conversation context."""
     global _reasoner_history, _reasoner_cache
 
     if not _reasoner_history:
-        _reasoner_history.append({"role": "system", "content": REASONER_SYSTEM})
+        _reasoner_history.append({"role": "system", "content": reasoner_system()})
     _reasoner_history.append({"role": "user", "content": text})
 
     prompt = _reasoner_tokenizer.apply_chat_template(
@@ -214,7 +229,9 @@ def pipeline(query, force_search=None):
     if needs_search:
         _stage(2, 4, "Searching web...")
         from web_search import search_both, format_search_context
-        ko_results, en_results = search_both(query, english_query)
+        ko_results, en_results = search_both(
+            query, english_query, is_local=judge_location(query),
+        )
         hit_count = len(ko_results) + len(en_results)
         _info(f"→ {hit_count} results found")
 

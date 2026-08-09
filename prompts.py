@@ -5,6 +5,7 @@ Common prompts are used by both mlx-pipeline.py and multimodal.py.
 Pipeline-specific prompts are imported only where needed.
 """
 
+import locale
 import re
 from datetime import datetime
 
@@ -19,6 +20,35 @@ def current_date_context():
     weekdays_ko = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
     weekday = weekdays_ko[now.weekday()]
     return f"Current date: {now.strftime('%Y-%m-%d')} ({weekday})"
+
+
+# Search engines steer correctly on the bare alpha-2 code too (measured in #67),
+# so unmapped countries fall through to the code rather than needing a full table.
+_COUNTRY_NAMES = {
+    "AU": "Australia", "CA": "Canada", "CN": "China", "DE": "Germany",
+    "FR": "France", "GB": "United Kingdom", "IN": "India", "JP": "Japan",
+    "KR": "South Korea", "SG": "Singapore", "TW": "Taiwan", "US": "United States",
+}
+
+
+def user_locale():
+    """Return (country_code, country_name, language_code) from the system locale.
+
+    All three are None when the locale is unset or C/POSIX. A wrong location is
+    worse than none, so callers skip location handling entirely in that case.
+    """
+    tag = locale.getlocale()[0] or ""
+    language, _, country = tag.partition("_")
+    country = country.split(".")[0].upper()
+    if len(country) != 2 or not country.isalpha():
+        return None, None, None
+    return country, _COUNTRY_NAMES.get(country, country), language.lower()
+
+
+def current_location_context():
+    """Return location string for system prompt injection, or "" if unknown."""
+    _, country_name, _ = user_locale()
+    return f"User location: {country_name}" if country_name else ""
 
 
 ANTI_SPECULATION = (
@@ -41,20 +71,32 @@ def search_judge_prompt(query):
         QUERY_KO: <optimized Korean search query>
         QUERY_EN: <optimized English search query>
     """
-    return (
-        f"{current_date_context()}\n\n"
-        f"Does the following query require up-to-date factual knowledge "
-        f"(recent events, current statistics, specific people/organizations, "
-        f"news, prices, dates, weather) to answer accurately?\n\n"
-        f"If yes, also generate optimized search queries — resolve relative dates "
-        f"(e.g. '오늘' → actual date, '지난주' → date range), add specific terms, "
-        f"and remove filler words.\n\n"
-        f"Query: {query}\n\n"
-        f"Reply in EXACTLY this format (no other text):\n"
-        f"SEARCH:yes or SEARCH:no\n"
-        f"QUERY_KO: <Korean search query>\n"
-        f"QUERY_EN: <English search query>"
+    location = current_location_context()
+    parts = [f"{current_date_context()}\n"]
+    if location:
+        parts.append(f"{location}\n")
+    parts.append(
+        "\nDoes the following query require up-to-date factual knowledge "
+        "(recent events, current statistics, specific people/organizations, "
+        "news, prices, dates, weather) to answer accurately?\n\n"
+        "If yes, also generate optimized search queries — resolve relative dates "
+        "(e.g. '오늘' → actual date, '지난주' → date range), add specific terms, "
+        "and remove filler words.\n\n"
     )
+    if location:
+        parts.append(
+            "If the query depends on where the user is (weather, local news, nearby "
+            "places, opening hours), append the location to both queries — the search "
+            "engines otherwise resolve it to an arbitrary place.\n\n"
+        )
+    parts.append(
+        f"Query: {query}\n\n"
+        "Reply in EXACTLY this format (no other text):\n"
+        "SEARCH:yes or SEARCH:no\n"
+        "QUERY_KO: <Korean search query>\n"
+        "QUERY_EN: <English search query>"
+    )
+    return "".join(parts)
 
 
 def parse_search_judge(response_text):
@@ -120,12 +162,16 @@ def filter_thinking_gemma(text):
 # mlx-pipeline specific — GPT-OSS reasoner + Qwen translation
 # ============================================================
 
-REASONER_SYSTEM = (
-    "You are an expert analyst. Respond ONLY in English. "
-    "Provide thorough analysis with clear reasoning. "
-    "Follow the user's requested format, length, and tone. "
-    f"{ANTI_SPECULATION}"
-)
+def reasoner_system():
+    """Build the reasoner system prompt with the user's location (call at runtime)."""
+    location = current_location_context()
+    return (
+        "You are an expert analyst. Respond ONLY in English. "
+        "Provide thorough analysis with clear reasoning. "
+        "Follow the user's requested format, length, and tone. "
+        f"{ANTI_SPECULATION}"
+        + (f" {location}." if location else "")
+    )
 
 TRANSLATE_KO_TO_EN = (
     "You are a strict translator. Translate the following Korean text to English word-for-word. "
@@ -140,6 +186,22 @@ TRANSLATE_KO_TO_EN = (
     "<English translation>\n"
     "SEARCH:yes or SEARCH:no"
 )
+
+
+def location_judge_prompt(query):
+    """Build a standalone prompt asking whether a query depends on the user's location.
+
+    Deliberately separate from TRANSLATE_KO_TO_EN: folding this judgment into that
+    prompt made Qwen answer questions instead of translating them, and made it treat
+    SEARCH and LOCAL as mutually exclusive (measured in #67).
+    """
+    return (
+        f"Does answering this question depend on where the user is located "
+        f"(weather, local news, nearby places, opening hours, local prices)?\n\n"
+        f"Question: {query}\n\n"
+        f"Reply with exactly one word: LOCAL:yes or LOCAL:no"
+    )
+
 
 TRANSLATE_EN_TO_KO = (
     "You are a translator. Translate the following English text to natural Korean. "
@@ -156,9 +218,11 @@ TRANSLATE_EN_TO_KO = (
 
 def gemma_system():
     """Build Gemma 4 system prompt with current date (call at runtime)."""
+    location = current_location_context()
     return (
         f"{current_date_context()}\n"
-        "You are a helpful multimodal assistant. Analyze images and text thoroughly. "
+        + (f"{location}\n" if location else "")
+        + "You are a helpful multimodal assistant. Analyze images and text thoroughly. "
         "Respond in the same language as the user's input. "
         f"{ANTI_SPECULATION}"
     )

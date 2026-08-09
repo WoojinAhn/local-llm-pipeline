@@ -12,6 +12,8 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
+from prompts import user_locale
+
 
 def brave_search(query: str, api_key: str | None = None, count: int = 5) -> list[dict]:
     """Search via Brave Search API. Returns list of {title, url, snippet}."""
@@ -19,11 +21,16 @@ def brave_search(query: str, api_key: str | None = None, count: int = 5) -> list
     if not api_key:
         return []
 
+    country, _, language = user_locale()
+    geo = {"country": country, "search_lang": language,
+           "ui_lang": f"{language}-{country}"} if country else {}
+
     try:
         params = urllib.parse.urlencode({
             "q": query,
             "count": count,
             "extra_snippets": "true",
+            **geo,
         })
         url = f"https://api.search.brave.com/res/v1/web/search?{params}"
 
@@ -94,8 +101,18 @@ def tavily_search(query: str, api_key: str | None = None, max_results: int = 5) 
         return []
 
 
-def search_both(ko_query: str, en_query: str) -> tuple[list[dict], list[dict]]:
-    """Run Brave (Korean) and Tavily (English) searches in parallel."""
+def search_both(ko_query: str, en_query: str, is_local: bool = False) -> tuple[list[dict], list[dict]]:
+    """Run Brave (Korean) and Tavily (English) searches in parallel.
+
+    When is_local, the country is appended to the English query. Tavily's own
+    `country` parameter does not steer it — only the query text does (#67).
+    Brave needs no such fixup; its geo parameters work.
+    """
+    if is_local:
+        _, country_name, _ = user_locale()
+        if country_name and country_name.lower() not in en_query.lower():
+            en_query = f"{en_query} {country_name}"
+
     with ThreadPoolExecutor(max_workers=2) as pool:
         ko_future = pool.submit(brave_search, ko_query)
         en_future = pool.submit(tavily_search, en_query)
