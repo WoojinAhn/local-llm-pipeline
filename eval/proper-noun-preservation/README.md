@@ -115,7 +115,11 @@ The field is descriptive git state, never resolved as a path, so the stale strin
 left as written rather than edited to match the current layout.
 
 Long runs save after every case (atomic replace) and support `--resume`, so an
-interrupted multi-hour run is not lost. `--resume` refuses to append when
+interrupted multi-hour run is not lost. What they do not survive is having this directory
+renamed underneath them: `HERE` is resolved at import time, so the next atomic save fails
+with `FileNotFoundError` on a path that no longer exists. #61's rename killed a nine-case
+run three cases in. Two runs must also not share a venv with dependency work — the stack
+is not fully captured in provenance (#62). `--resume` refuses to append when
 `config_detail`, `search`, `profile`, `generation_sha256_16` or `prompts_sha256_16` differ
 from the existing file, so results from different code never mix into one record. For the
 clean-English control, `config_detail` also pins the source artifact's **content hash**,
