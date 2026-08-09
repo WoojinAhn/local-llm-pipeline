@@ -18,6 +18,7 @@ import os
 import readline  # noqa: F401 - character-aware line editing; Darwin's tty erases by byte, splitting Hangul
 import sys
 import time
+from dataclasses import dataclass
 
 from env_loader import load_env
 load_env()
@@ -87,26 +88,39 @@ def load_models():
     console.print(f"  [green]Qwen loaded[/] [dim]in {time.time() - start:.1f}s[/]")
 
 
-def _stream_qwen(model, tokenizer, prompt, max_tokens=2000, stream=True):
-    """Stream Qwen generation (no thinking-block filtering)."""
+def _drain(chunks, echo):
+    """Run a chunk generator to completion, returning its value.
+
+    `for` discards a generator's return value, so the StopIteration is caught by hand.
+    """
+    while True:
+        try:
+            chunk = next(chunks)
+        except StopIteration as stop:
+            return stop.value
+        if echo:
+            print(chunk, end="", flush=True)
+
+
+def _qwen_chunks(model, tokenizer, prompt, max_tokens=2000):
+    """Yield Qwen text as it is generated (no thinking-block filtering).
+
+    Returns the joined text — the generation is a generator so that a caller wanting
+    tokens as they appear and a caller wanting only the finished string share one path.
+    """
     parts = []
     for response in stream_generate(
         model, tokenizer, prompt=prompt, max_tokens=max_tokens,
     ):
         parts.append(response.text)
-        if stream:
-            print(response.text, end="", flush=True)
-    if stream:
-        print(flush=True)
+        yield response.text
     return "".join(parts).strip()
 
 
-def _stream_reasoner(model, tokenizer, prompt, max_tokens=4000,
-                     stream=True, prompt_cache=None):
-    """Stream reasoner (harmony-format) generation.
+def _reasoner_chunks(model, tokenizer, prompt, max_tokens=4000, prompt_cache=None):
+    """Yield reasoner (harmony-format) final-channel text as it is generated.
 
-    Suppresses the analysis channel; streams only the final channel to stdout.
-    Returns the filtered final-channel text.
+    The analysis channel is suppressed and never yielded. Returns the filtered text.
     """
     raw_parts = []
     in_final = False
@@ -118,25 +132,51 @@ def _stream_reasoner(model, tokenizer, prompt, max_tokens=4000,
     ):
         raw_parts.append(response.text)
         if in_final:
-            if stream:
-                print(response.text, end="", flush=True)
+            yield response.text
             continue
         buffer += response.text
         if HARMONY_FINAL_MARKER in buffer:
             in_final = True
             tail = buffer.split(HARMONY_FINAL_MARKER, 1)[1]
             buffer = ""
-            if stream and tail:
-                print(tail, end="", flush=True)
-
-    if stream:
-        print(flush=True)
+            if tail:
+                yield tail
 
     return filter_thinking_harmony("".join(raw_parts))
 
 
-def translate(text, direction="ko2en", stream=False):
-    """Translate text. For ko2en, returns (translation, needs_search) tuple."""
+def _stream_qwen(model, tokenizer, prompt, max_tokens=2000, stream=True):
+    """Generate with Qwen, optionally echoing to stdout. Returns the text."""
+    text = _drain(_qwen_chunks(model, tokenizer, prompt, max_tokens), stream)
+    if stream:
+        print(flush=True)
+    return text
+
+
+def _stream_reasoner(model, tokenizer, prompt, max_tokens=4000,
+                     stream=True, prompt_cache=None):
+    """Generate with the reasoner, optionally echoing the final channel to stdout."""
+    text = _drain(
+        _reasoner_chunks(model, tokenizer, prompt, max_tokens, prompt_cache), stream)
+    if stream:
+        print(flush=True)
+    return text
+
+
+def _split_search_flag(raw):
+    """Peel the SEARCH:yes/no line off a ko2en translation."""
+    for line in raw.strip().split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("SEARCH:"):
+            return raw[:raw.rfind(line)].strip(), "yes" in stripped.lower()
+    return raw, False
+
+
+def _translate_chunks(text, direction="ko2en"):
+    """Yield translator text as it is generated.
+
+    Returns (translation, needs_search) for ko2en, the translation otherwise.
+    """
     system = TRANSLATE_KO_TO_EN if direction == "ko2en" else TRANSLATE_EN_TO_KO
     messages = [
         {"role": "system", "content": system},
@@ -146,23 +186,19 @@ def translate(text, direction="ko2en", stream=False):
         messages, add_generation_prompt=True, tokenize=False,
         enable_thinking=False,
     )
-    raw = _stream_qwen(
-        _qwen_model, _qwen_tokenizer, prompt,
-        max_tokens=2000, stream=stream,
-    )
+    raw = yield from _qwen_chunks(_qwen_model, _qwen_tokenizer, prompt, max_tokens=2000)
 
     if direction == "ko2en":
-        needs_search = False
-        translation = raw
-        for line in raw.strip().split("\n"):
-            stripped = line.strip()
-            if stripped.startswith("SEARCH:"):
-                needs_search = "yes" in stripped.lower()
-                translation = raw[:raw.rfind(line)].strip()
-                break
-        return translation, needs_search
-
+        return _split_search_flag(raw)
     return raw
+
+
+def translate(text, direction="ko2en", stream=False):
+    """Translate text. For ko2en, returns (translation, needs_search) tuple."""
+    value = _drain(_translate_chunks(text, direction), stream)
+    if stream:
+        print(flush=True)
+    return value
 
 
 def judge_location(query):
@@ -179,8 +215,12 @@ def judge_location(query):
     return "local:yes" in raw.lower()
 
 
-def analyze(text, stream=True):
-    """Analyze text using the GPT-OSS reasoner with conversation context."""
+def _analyze_chunks(text):
+    """Yield reasoner final-channel text as it is generated; return the analysis.
+
+    Conversation history and the prompt cache are updated here, so any caller of this
+    generator — streaming or not — keeps the same context bookkeeping.
+    """
     global _reasoner_history, _reasoner_cache
 
     if not _reasoner_history:
@@ -191,14 +231,21 @@ def analyze(text, stream=True):
         _reasoner_history, add_generation_prompt=True, tokenize=False,
     )
 
-    result = _stream_reasoner(
+    result = yield from _reasoner_chunks(
         _reasoner_model, _reasoner_tokenizer, prompt,
-        max_tokens=4000, stream=stream,
-        prompt_cache=_reasoner_cache,
+        max_tokens=4000, prompt_cache=_reasoner_cache,
     )
 
     _reasoner_history.append({"role": "assistant", "content": result})
 
+    return result
+
+
+def analyze(text, stream=True):
+    """Analyze text using the GPT-OSS reasoner with conversation context."""
+    result = _drain(_analyze_chunks(text), stream)
+    if stream:
+        print(flush=True)
     return result
 
 
@@ -211,69 +258,181 @@ def reset_context():
     console.print("  [yellow]\\[Context reset][/]\n")
 
 
-def pipeline(query, force_search=None):
-    """Triple-stage pipeline with optional web search.
+@dataclass
+class PipelineResult:
+    """Everything one pipeline run produced.
+
+    Carries its own evidence: a saved or re-served answer should say what was asked in
+    English, what was searched, and where the material came from — not just the prose.
+    """
+    query: str
+    english_query: str
+    english_analysis: str
+    korean_result: str
+    search_performed: bool
+    search_queries: dict   # {"ko": ..., "en": ...} as issued, empty when no search ran
+    sources: list          # [{"title", "url", "lang"}], in the order the engines returned
+    timings: dict          # seconds per stage, plus "total"
+
+
+def _tokens(stage, chunks):
+    """Re-yield generated chunks as token events, passing the return value through."""
+    while True:
+        try:
+            chunk = next(chunks)
+        except StopIteration as stop:
+            return stop.value
+        yield ("token", (stage, chunk))
+
+
+def pipeline_events(query, force_search=None):
+    """Triple-stage pipeline with optional web search, as an event stream.
+
+    Yields (kind, payload) pairs and writes nothing to the terminal:
+
+        ("stage", (num, total, label))   a stage boundary
+        ("info", text)                   an indented progress line
+        ("blank", None)                  a blank line
+        ("busy", label) / ("done", None) generation begins / ends
+        ("token", (stage, text))         a chunk, as the model produces it
+        ("result", PipelineResult)       the last event, always
 
     force_search: True=always, False=never, None=auto (Qwen judges)
     """
+    started = time.time()
+    timings = {}
+
     # Stage 1: Translate + judge search
-    _stage(1, 4, "Translating to English...")
-    english_query, needs_search = translate(query, direction="ko2en")
-    _info(f"→ {english_query}")
+    yield ("stage", (1, 4, "Translating to English..."))
+    t0 = time.time()
+    english_query, needs_search = yield from _tokens(
+        "ko2en", _translate_chunks(query, direction="ko2en"))
+    timings["ko2en"] = round(time.time() - t0, 2)
+    yield ("info", f"→ {english_query}")
 
     if force_search is not None:
         needs_search = force_search
 
     # Stage 2: Web search (if needed)
     search_context = ""
+    search_queries = {}
+    sources = []
     if needs_search:
-        _stage(2, 4, "Searching web...")
-        from web_search import search_both, format_search_context
-        ko_results, en_results = search_both(
-            query, english_query, is_local=judge_location(query),
-        )
+        yield ("stage", (2, 4, "Searching web..."))
+        t0 = time.time()
+        from web_search import search_both, format_search_context, localize_en_query
+        en_search_query = localize_en_query(english_query, judge_location(query))
+        search_queries = {"ko": query, "en": en_search_query}
+        ko_results, en_results = search_both(query, en_search_query)
         hit_count = len(ko_results) + len(en_results)
-        _info(f"→ {hit_count} results found")
+        yield ("info", f"→ {hit_count} results found")
+
+        # Captured before the Korean results are collapsed below: that step keeps the
+        # snippet text and drops every Korean URL, so this is the last point where the
+        # answer's Korean evidence can still be attributed.
+        sources = [dict(title=r["title"], url=r["url"], lang="ko") for r in ko_results]
+        sources += [dict(title=r["title"], url=r["url"], lang="en") for r in en_results]
 
         # Translate Korean snippets to English for the reasoner
         if ko_results:
-            _info("→ Translating Korean results to English...")
+            yield ("info", "→ Translating Korean results to English...")
             ko_snippets = "\n".join(
                 f"{i}. [{r['title']}] {r['snippet']}" for i, r in enumerate(ko_results, 1)
             )
-            translated_snippets, _ = translate(ko_snippets, direction="ko2en")
+            translated_snippets, _ = yield from _tokens(
+                "ko-snippets", _translate_chunks(ko_snippets, direction="ko2en"))
             for i, r in enumerate(ko_results):
                 r["snippet"] = ""  # clear original
             # Replace ko_results with single translated block
             ko_results = [{"title": "Korean sources (translated)", "url": "", "snippet": translated_snippets}]
 
         search_context = format_search_context(ko_results, en_results)
-        console.print()
+        timings["search"] = round(time.time() - t0, 2)
+        yield ("blank", None)
     else:
-        _stage(2, 4, "[dim]Search skipped[/]")
-        console.print()
+        yield ("stage", (2, 4, "[dim]Search skipped[/]"))
+        yield ("blank", None)
 
-    # Stage 3: Reasoner — spinner during generation, markdown on finish
-    _stage(3, 4, "GPT-OSS reasoning...")
+    # Stage 3: Reasoner
+    yield ("stage", (3, 4, "GPT-OSS reasoning..."))
     if search_context:
         analysis_prompt = build_search_context_prompt(search_context, english_query)
     else:
         analysis_prompt = english_query
-    with console.status("[cyan]reasoning...[/]", spinner="dots"):
-        english_analysis = analyze(analysis_prompt, stream=False)
+    yield ("busy", "reasoning...")
+    t0 = time.time()
+    english_analysis = yield from _tokens("reason", _analyze_chunks(analysis_prompt))
+    timings["reason"] = round(time.time() - t0, 2)
+    yield ("done", None)
 
-    # Stage 4: Translate to Korean (also silent, rendered in the final block)
-    _stage(4, 4, "Translating to Korean...")
-    with console.status("[cyan]translating...[/]", spinner="dots"):
-        korean_result = translate(english_analysis, direction="en2ko", stream=False)
+    # Stage 4: Translate to Korean
+    yield ("stage", (4, 4, "Translating to Korean..."))
+    yield ("busy", "translating...")
+    t0 = time.time()
+    korean_result = yield from _tokens(
+        "en2ko", _translate_chunks(english_analysis, direction="en2ko"))
+    timings["en2ko"] = round(time.time() - t0, 2)
+    yield ("done", None)
 
-    # Final rendered output — markdown for readability, no stream duplication
+    yield ("result", PipelineResult(
+        query=query, english_query=english_query,
+        english_analysis=english_analysis, korean_result=korean_result,
+        search_performed=bool(needs_search), search_queries=search_queries,
+        sources=sources, timings=dict(timings, total=round(time.time() - started, 2)),
+    ))
+
+
+def pipeline(query, force_search=None, on_event=None):
+    """Run the triple-stage pipeline and return its PipelineResult.
+
+    Silent unless `on_event` is given — pass ConsoleRenderer() for the terminal output.
+    """
+    result = None
+    for kind, payload in pipeline_events(query, force_search=force_search):
+        if kind == "result":
+            result = payload
+        elif on_event is not None:
+            on_event(kind, payload)
+    return result
+
+
+class ConsoleRenderer:
+    """Turns pipeline events into the terminal output.
+
+    Token events are dropped: the final block re-renders through Markdown(), so
+    echoing them here would print the answer twice (#64 owns that choice).
+    """
+
+    def __init__(self):
+        self._status = None
+
+    def __call__(self, kind, payload):
+        if kind == "stage":
+            _stage(*payload)
+        elif kind == "info":
+            _info(payload)
+        elif kind == "blank":
+            console.print()
+        elif kind == "busy":
+            self._status = console.status(f"[cyan]{payload}[/]", spinner="dots")
+            self._status.start()
+        elif kind == "done":
+            self.close()
+
+    def close(self):
+        """Stop any live spinner. Idempotent — also the caller's cleanup on error."""
+        if self._status is not None:
+            self._status.stop()
+            self._status = None
+
+
+def render_result(result):
+    """Markdown for readability, no stream duplication."""
     console.print()
     console.print(Rule("English Analysis", style="blue"))
-    console.print(Markdown(english_analysis))
+    console.print(Markdown(result.english_analysis))
     console.print(Rule("Korean Translation", style="blue"))
-    console.print(Markdown(korean_result))
-    return None
+    console.print(Markdown(result.korean_result))
 
 
 def main():
@@ -374,7 +533,13 @@ def main():
             search_tag = "SEARCH:yes" if needs_search else "SEARCH:no"
             console.print(f"\n{result}\n[dim]{search_tag}[/]\n")
         else:
-            pipeline(user_input, force_search=force_search)
+            renderer = ConsoleRenderer()
+            try:
+                result = pipeline(user_input, force_search=force_search,
+                                  on_event=renderer)
+            finally:
+                renderer.close()  # a spinner outlives an exception otherwise
+            render_result(result)
             console.print()
 
         if query is not None:
