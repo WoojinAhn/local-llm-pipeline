@@ -36,7 +36,14 @@ python3 multimodal.py --text-only "..."          # no image
 python3 llm-pipeline.py
 ```
 
-The pipelines themselves have no test suite — verify changes by running the relevant one and inspecting output (Korean cleanliness, search injection, channel filtering). The eval harness under `eval/proper-noun-preservation/` does have tests. They load no model, but `test_control_preflight.py` imports `run.py` and therefore needs `mlx` — use the venv interpreter, not the system `python3`:
+`test_pipeline_contract.py` covers the `mlx-pipeline.py` seam #71 created — the result object, the event stream, and the exact terminal output — with every model call stubbed, so it runs in under a second and loads nothing:
+
+```bash
+.venv/bin/python test_pipeline_contract.py         # 21 checks, no model, no network
+.venv/bin/python test_pipeline_contract.py --print-golden   # regenerate GOLDEN
+```
+
+It says nothing about generation *quality*. Korean cleanliness, search injection and channel filtering on real models are still verified by running the pipeline and reading the output. The eval harness under `eval/proper-noun-preservation/` has its own tests. They load no model, but `test_control_preflight.py` imports `run.py` and therefore needs `mlx` — use the venv interpreter, not the system `python3`:
 
 ```bash
 .venv/bin/python eval/proper-noun-preservation/test_score.py             # scorer
