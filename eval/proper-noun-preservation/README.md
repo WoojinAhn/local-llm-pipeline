@@ -127,8 +127,13 @@ never mix into one record. That last key exists because `prompts_sha256_16` hash
 `prompts.reasoner_system()`, which appends the user's locale at call time. Identical
 source on two machines therefore sends two different prompts; the resolved value is
 hashed separately, and the locale string that produced it is recorded alongside as
-`reasoner_system_location`. Records written before #70 carry neither field, so they are
-refused on resume — which is correct, since the prompt they used cannot be recovered. For the
+`reasoner_system_location`. Both are **null for single-model configs**, which send no
+system prompt at all (`call(m, t, None, ...)`): recording a hash there would assert a
+prompt that was never in play, and would refuse a perfectly valid `single-exaone
+--resume` merely because the machine's locale had changed. Null compares equal to null,
+so the gate costs those configs nothing. Records written before #70 carry neither field,
+so they are refused on resume — which is correct, since the prompt they used cannot be
+recovered. For the
 clean-English control, `config_detail` also pins the source artifact's **content hash**,
 not just its `source_tag` filename (schema 3, #47). Filename-only pinning let a
 regenerated actual arm pass the gate, and the resulting file — half built from the old

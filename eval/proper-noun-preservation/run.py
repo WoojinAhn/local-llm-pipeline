@@ -125,6 +125,14 @@ def env_metadata(search, profile, name):
         except Exception:
             return ""
 
+    # The single-model path sends no system prompt at all (`call(m, t, None, ...)`
+    # below), so the locale-dependent reasoner prompt cannot reach its output.
+    # Recording a hash there would assert a prompt that was never in play, and gate
+    # its --resume on a value that means nothing for it. An unrecognised name is the
+    # clean-English control passing its experiment name; that arm does use the
+    # prompt, so anything not known to be single-model records.
+    uses_reasoner_prompt = CONFIGS.get(name, {}).get("kind") != "single"
+
     dirty = git_raw("status", "--porcelain")
     # Porcelain v1: 2 status columns + a space, then the path. Renames read "old -> new";
     # take the destination, which is the path that actually differs.
@@ -159,9 +167,12 @@ def env_metadata(search, profile, name):
         # reasoner_system() resolve the user's locale at call time, so two machines
         # running identical source send different system prompts. Record the resolved
         # value's hash, and the locale that produced it, or the record is unattributable.
-        reasoner_system_sha256_16=hashlib.sha256(
-            prompts.reasoner_system().encode()).hexdigest()[:16],
-        reasoner_system_location=prompts.current_location_context(),
+        # Null for configs that send no system prompt — see uses_reasoner_prompt above.
+        reasoner_system_sha256_16=(
+            hashlib.sha256(prompts.reasoner_system().encode()).hexdigest()[:16]
+            if uses_reasoner_prompt else None),
+        reasoner_system_location=(
+            prompts.current_location_context() if uses_reasoner_prompt else None),
         python=sys.version.split()[0],
         platform=platform.platform(), machine=platform.machine(),
         mlx=ver("mlx"), mlx_lm=ver("mlx-lm"), transformers=ver("transformers"),
